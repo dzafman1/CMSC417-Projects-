@@ -91,12 +91,12 @@ int main(int argc, char *argv[]){
     
     // Bind the socket to the socketAddr
     if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0){
-        printf("Binding socket failed\n");
+        fprintf(stderr, "Binding socket failed\n");
     }
 
     //listen to at most five clients
     if (listen(servSock, 5) < 0){
-        printf("listening failed\n");
+        fprintf(stderr, "listening failed\n");
     }
 
     for(;;){
@@ -106,15 +106,15 @@ int main(int argc, char *argv[]){
 
         int clntSock = accept(servSock, (struct sockaddr *) &clntAddr, &clntAddrLen);
         if(clntSock < 0){
-            printf("accepting socket failed\n");
+            fprintf(stderr, "accepting socket failed\n");
         }else{
             if (fork() == 0){
                 //child
                 char clntName[INET_ADDRSTRLEN]; // String to contain client address
                 if (inet_ntop(AF_INET, &clntAddr.sin_addr.s_addr, clntName, sizeof(clntName)) != NULL){
-                    printf("Handling client %s/%d\n", clntName, ntohs(clntAddr.sin_port));
+                    fprintf(stderr, "Handling client %s/%d\n", clntName, ntohs(clntAddr.sin_port));
                 }else{
-                    puts("Unable to get client address");
+                    fprintf(stderr, "Unable to get client address");
                 }
                 
                 //Receving client initialization
@@ -122,7 +122,7 @@ int main(int argc, char *argv[]){
                 read_n_bytes(&type, 4, clntSock);
                 int32_t hashreq_num;
                 read_n_bytes(&hashreq_num, 4, clntSock);;
-                printf("Server will get %d hash Requests\n", hashreq_num);
+                fprintf(stderr, "Server will get %d hash Requests\n", hashreq_num);
                 
                 //Sending out achkonwledgement
                 type = 2;
