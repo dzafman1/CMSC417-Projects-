@@ -42,4 +42,3 @@ int checksum_reset(struct checksum_ctx*);
 int checksum_destroy(struct checksum_ctx*);
 
 #endif
-

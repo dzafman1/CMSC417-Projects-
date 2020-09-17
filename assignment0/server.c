@@ -71,15 +71,14 @@ int main(int argc, char *argv[]){
 	};
 	struct argp argp_settings = { options, server_parser, 0, 0, 0, 0, 0 };
 	if (argp_parse(&argp_settings, argc, argv, 0, NULL, &args) != 0) {
-		printf("Got an error condition when parsing\n");
+         fprintf(stderr, "Got an error condition when parsing\n");
 	}
 
-	printf("Got port %d and salt %s with length %ld\n", args.port, args.salt, args.salt_len);
-    
+    fprintf(stderr, "Got port %d and salt %s with length %ld\n", args.port, args.salt, args.salt_len);
     
     int servSock; // Socket descriptor for server
     if ((servSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0){
-        printf("socket creation failed\n");
+        fprintf(stderr, "socket creation failed\n");
     }
 
     // Construct local address structure
@@ -114,7 +113,7 @@ int main(int argc, char *argv[]){
                 if (inet_ntop(AF_INET, &clntAddr.sin_addr.s_addr, clntName, sizeof(clntName)) != NULL){
                     fprintf(stderr, "Handling client %s/%d\n", clntName, ntohs(clntAddr.sin_port));
                 }else{
-                    fprintf(stderr, "Unable to get client address");
+                    fprintf(stderr, "Unable to get client address\n");
                 }
                 
                 //Receving client initialization
@@ -122,16 +121,16 @@ int main(int argc, char *argv[]){
                 read_n_bytes(&type, 4, clntSock);
                 int32_t hashreq_num;
                 read_n_bytes(&hashreq_num, 4, clntSock);;
-                fprintf(stderr, "Server will get %d hash Requests\n", hashreq_num);
+                fprintf(stderr, "Server will get %d hash Requests\n", ntohl(hashreq_num));
                 
                 //Sending out achkonwledgement
-                type = 2;
-                send_n_bytes(&type, 4, clntSock);
-                int32_t ack_len = 40*hashreq_num;
-                send_n_bytes(&ack_len, 4, clntSock);
+                uint32_t type_nb = htonl(2);
+                uint32_t reqnum_nb = htonl(40*hashreq_num);
+                send_n_bytes(&type_nb, 4, clntSock);
+                send_n_bytes(&reqnum_nb, 4, clntSock);
 
                 int32_t counter;
-                int32_t mes_length;
+                uint32_t mes_length;
                 struct checksum_ctx *ctx;
                 if(args.salt_len == 0){
                     ctx = checksum_create(NULL, 0);
@@ -146,7 +145,8 @@ int main(int argc, char *argv[]){
                     //Hash request
                     read_n_bytes(&type, 4, clntSock);
                     read_n_bytes(&mes_length, 4, clntSock);
-                    
+                    mes_length = ntohl(mes_length);
+
                     void *read_buffer = NULL;
                     int update_times= 0;
                     if(mes_length <= 4096){
@@ -170,9 +170,10 @@ int main(int argc, char *argv[]){
                     checksum_reset(ctx);
 
                     //Hash response
-                    type = 4;
-                    send_n_bytes(&type, 4, clntSock);
-                    send_n_bytes(&counter, 4, clntSock);
+                    uint32_t counter_nb = htonl(counter);
+                    type_nb = htonl(4);
+                    send_n_bytes(&type_nb, 4, clntSock);
+                    send_n_bytes(&counter_nb, 4, clntSock);
                     send_n_bytes(checksum, 32, clntSock);
 
                     free(read_buffer);
@@ -184,6 +185,6 @@ int main(int argc, char *argv[]){
                 close(clntSock);
             }
         }
-        //free(args.salt);
+        free(args.salt);
     }
 }

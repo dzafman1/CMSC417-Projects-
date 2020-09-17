@@ -102,18 +102,18 @@ int main(int argc, char *argv[]){
 	bzero(&args, sizeof(args));
 
 	if (argp_parse(&argp_settings, argc, argv, 0, NULL, &args) != 0) {
-		printf("Got error in parse\n");
+		fprintf(stderr, "Got error in parse\n");
 	}
 
 	/* If they don't pass in all required settings, you should detect
 	 * this and return a non-zero value from main */
-	printf("Got %s on port %d with n=%d smin=%d smax=%d filename=%s\n",
+	fprintf(stderr, "Got %s on port %d with n=%d smin=%d smax=%d filename=%s\n",
 	       args.ip_address, args.port, args.hashnum, args.smin, args.smax, args.filename);
 
     int clientSock;
 
     if ((clientSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0){
-        printf("socket creation failed\n");
+        fprintf(stderr, "socket creation failed\n");
     }
     
     struct sockaddr_in servAddr; // Server address
@@ -126,36 +126,51 @@ int main(int argc, char *argv[]){
         puts("client socket connection failed");
     }
 
-    int32_t type = 1;
-    int32_t num_req = args.hashnum;
+    int32_t type = htonl(1);
+    int32_t num_req = htonl(args.hashnum);
     int32_t total_len = 0;
 
     //Sending out initialization
     send_n_bytes(&type, 4, clientSock);
     send_n_bytes(&num_req, 4, clientSock);
-
     //Reading the achknowledgement
     read_n_bytes(&type, 4, clientSock);
     read_n_bytes(&total_len, 4, clientSock);
-    printf("The total length sent out by server is %d\n", total_len);
-    srand(time(NULL));
-    FILE *file = fopen (args.filename , "r");
-    int counter;
-    for(counter = 0; counter < args.hashnum; counter++){
-        int32_t random_len =  rand()%(args.smin-args.smax) + args.smin;
-        void *send_buffer = malloc(random_len);
-        fread(send_buffer, random_len, 1, file);
+		
+	type = ntohl(type);
+	total_len = ntohl(total_len);
 
-		int32_t hashreq_type = 3;
+    fprintf(stderr, "The total length sent out by server is %d\n", total_len);
+    
+    FILE *file = fopen (args.filename , "r");
+	free(args.filename);
+    int counter;
+
+    for(counter = 0; counter < args.hashnum; counter++){
+		srand(time(NULL));
+		
+        uint32_t random_len =  ((rand()%(args.smax-args.smin+1)) + args.smin);
+		size_t cur_len = 0;
+        char *send_buffer = malloc(random_len);
+
+		while(cur_len < random_len){
+			size_t bytes_remain = random_len-cur_len;
+			size_t bytes_read = fread(send_buffer + cur_len, 1, bytes_remain,  file);
+			cur_len += bytes_read;
+		}
+		
+		uint32_t hashreq_type = htonl(3);
+		uint32_t random_len_nb = htonl(random_len);
 		send_n_bytes(&hashreq_type, 4, clientSock);
-		send_n_bytes(&random_len, 4, clientSock);
+		send_n_bytes(&random_len_nb, 4, clientSock);
         send_n_bytes(send_buffer, random_len, clientSock);
+
         char trash_buffer[8] = {0};
         uint8_t receive_buffer[33] = {0};
 
         read_n_bytes(trash_buffer, 8, clientSock);
         read_n_bytes(receive_buffer, 32, clientSock);
-
+		
 		printf("%d: 0x", counter+1);
 		for(int i = 0; i < 32; ++i) {
 			printf("%02x",  receive_buffer[i]);
