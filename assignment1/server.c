@@ -43,23 +43,22 @@ Node *update_list(Node *head, char *addr, char *port, int new_seq, time_t cur_ti
     int flag = 0;
 
     while(current != NULL)
-    {
-        
+    {   
         if(!strcmp(current->addr, addr) && !strcmp(current->port, port)){
             flag = 1;
-            if(fabs(difftime(current->last_update, cur_time)) >= 120){
+            if(difftime(cur_time, current->last_update) >= 120){
                 current->seq = new_seq;
                 current->last_update = cur_time;
             }else{
-                if(current->seq > new_seq)
-                    printf("%s:%s %d %d", current->addr, current->port, new_seq, current->seq);
-                else{
+                if(current->seq > new_seq){
+                    printf("%s:%s %d %d\n", current->addr, current->port, new_seq, current->seq);
+                }else{
                     current->seq = new_seq;
                     current->last_update = cur_time;
                 }
             }
         }else{
-            if(difftime(current->last_update, cur_time) >= 120){
+            if(difftime(cur_time, current->last_update) >= 120){
                 current->seq = 0;
                 current->last_update = cur_time;
             }
@@ -68,7 +67,7 @@ Node *update_list(Node *head, char *addr, char *port, int new_seq, time_t cur_ti
         current = current -> next;
     }
     
-    if(!flag){
+    if(!flag){;
         //not connected before
         Node *newnode = calloc(sizeof(Node), 1);
         newnode->seq = new_seq;
@@ -106,6 +105,7 @@ int main(int argc, char *argv[]){
 	struct argp_option options[] = {
 		{ "port", 'p', "port", 0, "The port to be used for the server" ,0},
 		{ "drop_percent", 'd', "drop_percent", 0, "The percent a packet to be dropped" ,0},
+        {0}
 	};
 	struct argp argp_settings = { options, server_parser, 0, 0, 0, 0, 0 };
 	if (argp_parse(&argp_settings, argc, argv, 0, NULL, &args) != 0) {
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]){
 	}       
 
     if(args.port <= 1024){
-        fprintf(stderr, "Port must > 1024\n");
+        fprintf(stderr, "You must use a port > 1024\n");
         abort();
     }
 
@@ -155,10 +155,11 @@ int main(int argc, char *argv[]){
         // Block until receive message from a client
         char buffer[22]; // I/O buffer
         // Size of received message
-        size_t numBytesRcvd = recvfrom(sock, buffer, 22, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
+        recvfrom(sock, buffer, 22, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
 
         int random = ((rand()%(100+1)+0));
-        if( args.drop_percent == 0 || random > args.drop_percent){
+        
+        if(args.drop_percent == 0 || random > args.drop_percent){
             struct timespec tspec;
             clock_gettime(CLOCK_REALTIME,&tspec);
             time_t serv_sec = tspec.tv_sec;

@@ -146,8 +146,9 @@ int main(int argc, char *argv[]){
 	free(args.filename);
     int counter;
 
+	srand(time(NULL));	
     for(counter = 0; counter < args.hashnum; counter++){
-		srand(time(NULL));
+		
 		
         uint32_t random_len =  ((rand()%(args.smax-args.smin+1)) + args.smin);
 		size_t cur_len = 0;

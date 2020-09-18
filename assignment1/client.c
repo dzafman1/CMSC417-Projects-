@@ -69,13 +69,24 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Got error in parse\n");
 	}
 
-	fprintf(stderr, "Got %s on port %d with reqnum=%d timeout=%d\n",
-	       args.addr, args.port, args.reqnum, args.timeout);
+
+    if(!strcmp("", args.addr)){
+        fprintf(stderr, "IP addr must be specified\n");
+        abort();
+    }
     if(args.reqnum < 0){
         fprintf(stderr, "Num of TimeRequests must >=0\n");
         abort();
     }
+    if(args.port <= 1024){
+        fprintf(stderr, "You must use a port > 1024\n");
+        abort();
+    }
     
+    
+    fprintf(stderr, "Got %s on port %d with reqnum=%d timeout=%d\n",
+        args.addr, args.port, args.reqnum, args.timeout);
+           
     struct addrinfo addrCriteria; // Criteria for address match
     memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
     addrCriteria.ai_family = AF_UNSPEC; // Any address family
@@ -112,6 +123,7 @@ int main(int argc, char *argv[]){
         memcpy(buffer+4, &ver, 2);
         memcpy(buffer+6, &sec_nb, 8);
         memcpy(buffer+14, &nanosec_nb, 8);
+
         sendto(sock, buffer, 22,0,servAddr->ai_addr, servAddr->ai_addrlen);
     }
 
