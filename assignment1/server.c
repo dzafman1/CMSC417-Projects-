@@ -153,7 +153,7 @@ int main(int argc, char *argv[]){
         socklen_t clntAddrLen = sizeof(clntAddr);
 
         // Block until receive message from a client
-        char buffer[22]; // I/O buffer
+        uint8_t buffer[22]; // I/O buffer
         // Size of received message
         recvfrom(sock, buffer, 22, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
 
@@ -181,7 +181,7 @@ int main(int argc, char *argv[]){
             client_nanosec = be64toh(client_nanosec);
             list = update_list(list, client_addr, client_port, client_seq, serv_sec);
 
-            char buffer[38];
+            uint8_t buffer[38];
             client_seq = htonl(client_seq); 
             client_sec = htobe64(client_sec);
             client_nanosec = htobe64(client_nanosec);
@@ -197,6 +197,7 @@ int main(int argc, char *argv[]){
             memcpy(buffer+30, &serv_nanosec_nb, 8);
             
             sendto(sock, buffer, 38, 0, (struct sockaddr *) &clntAddr, sizeof(clntAddr));
+           
         }
     }
 }

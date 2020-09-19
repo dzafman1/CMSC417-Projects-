@@ -9,6 +9,7 @@
 #include <argp.h>
 #include <unistd.h>
 #include <time.h>
+#include <math.h>
 
 struct client_arguments {
 	char ip_address[16]; /* You can store this as a string, but I probably wouldn't */
@@ -105,6 +106,32 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Got error in parse\n");
 	}
 
+	if(!strcmp("", args.ip_address)){
+        fprintf(stderr, "IP addr must be specified\n");
+        abort();
+    }
+
+	if(args.port == 0){
+        fprintf(stderr, "Port must be specified\n");
+        abort();
+    }
+
+	if(args.hashnum < 0){
+        fprintf(stderr, "Hash req number must >= 0\n");
+        abort();
+    }
+
+	
+	if(args.smin < 1 || args.smax > pow(2,24)){
+        fprintf(stderr, "smin must >=1 && smax must <= 2^24\n");
+        abort();
+    }
+
+	if(!strcmp("", args.filename)){
+        fprintf(stderr, "File name must be specified\n");
+        abort();
+    }
+
 	/* If they don't pass in all required settings, you should detect
 	 * this and return a non-zero value from main */
 	fprintf(stderr, "Got %s on port %d with n=%d smin=%d smax=%d filename=%s\n",
@@ -126,17 +153,17 @@ int main(int argc, char *argv[]){
         puts("client socket connection failed");
     }
 
-    int32_t type = htonl(1);
-    int32_t num_req = htonl(args.hashnum);
-    int32_t total_len = 0;
+    uint32_t type = htonl(1);
+    uint32_t num_req = htonl(args.hashnum);
+    uint32_t total_len = 0;
 
     //Sending out initialization
     send_n_bytes(&type, 4, clientSock);
     send_n_bytes(&num_req, 4, clientSock);
+
     //Reading the achknowledgement
     read_n_bytes(&type, 4, clientSock);
     read_n_bytes(&total_len, 4, clientSock);
-		
 	type = ntohl(type);
 	total_len = ntohl(total_len);
 
@@ -148,15 +175,13 @@ int main(int argc, char *argv[]){
 
 	srand(time(NULL));	
     for(counter = 0; counter < args.hashnum; counter++){
-		
-		
         uint32_t random_len =  ((rand()%(args.smax-args.smin+1)) + args.smin);
 		size_t cur_len = 0;
-        char *send_buffer = malloc(random_len);
+        uint8_t send_buffer[random_len];
 
 		while(cur_len < random_len){
-			size_t bytes_remain = random_len-cur_len;
-			size_t bytes_read = fread(send_buffer + cur_len, 1, bytes_remain,  file);
+			size_t bytes_remain = random_len - cur_len;
+			size_t bytes_read = fread(send_buffer + cur_len, 1, bytes_remain, file);
 			cur_len += bytes_read;
 		}
 		
@@ -166,7 +191,7 @@ int main(int argc, char *argv[]){
 		send_n_bytes(&random_len_nb, 4, clientSock);
         send_n_bytes(send_buffer, random_len, clientSock);
 
-        char trash_buffer[8] = {0};
+        uint8_t trash_buffer[8] = {0};
         uint8_t receive_buffer[33] = {0};
 
         read_n_bytes(trash_buffer, 8, clientSock);
@@ -178,7 +203,6 @@ int main(int argc, char *argv[]){
 		}
 		putchar('\n');
         
-        free(send_buffer);
     }
     fclose(file);
     close(clientSock);

@@ -95,7 +95,7 @@ int main(int argc, char *argv[]){
     addrCriteria.ai_protocol = IPPROTO_UDP; // Only UDP protocol
 
     struct addrinfo *servAddr; // List of server addresses
-    char port_str[1025] = {0};
+    uint8_t port_str[1025] = {0};
     sprintf(port_str, "%d", args.port);
     int rtnVal = getaddrinfo(args.addr, port_str, &addrCriteria, &servAddr);
     if (rtnVal != 0)
@@ -106,7 +106,7 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "socket failed\n");
 
     for(int i = 0; i < args.reqnum; i++){
-        char buffer[22];
+        uint8_t buffer[22];
         uint32_t seq = i+1;
         uint16_t ver = 7;
         struct timespec tspec;
@@ -124,7 +124,7 @@ int main(int argc, char *argv[]){
         memcpy(buffer+6, &sec_nb, 8);
         memcpy(buffer+14, &nanosec_nb, 8);
 
-        sendto(sock, buffer, 22,0,servAddr->ai_addr, servAddr->ai_addrlen);
+        sendto(sock, buffer, 22,0, servAddr->ai_addr, servAddr->ai_addrlen);
     }
 
     struct timeval timeout={args.timeout,0}; 
@@ -136,7 +136,7 @@ int main(int argc, char *argv[]){
     memset(messages, 0, args.reqnum*sizeof(Mes));
 
     for(int i = 0; i < args.reqnum; i++){
-        char buffer[38]; 
+        uint8_t buffer[38]; 
         int recvlen = recvfrom(sock, buffer, 38, 0, (struct sockaddr *)&fromAddr, &fromAddrLen);
         if (recvlen >= 0) {
             struct timespec tspec;
