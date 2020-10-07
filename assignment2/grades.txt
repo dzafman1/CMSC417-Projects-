@@ -1,0 +1,72 @@
+I think your 24-bit/endianness conversion shifts the wrong way. I don't think it's only when it's a direct hop that the next hop going down is bad (the temp_neg business).
+Grade: 35
+======================
+[dpeng12] (Builds PASS) 
+-----------------
+gcc -c -Wall -Wextra -ggdb -std=gnu99 rt.c
+gcc -c -Wall -Wextra -ggdb -std=gnu99 es.c
+gcc -c -Wall -Wextra -ggdb -std=gnu99 ls.c
+gcc -c -Wall -Wextra -ggdb -std=gnu99 n2h.c
+gcc -c -Wall -Wextra -ggdb -std=gnu99 dr.c
+bison --verbose -d -b ru -p ru ru.y
+gcc  -Wall -Wextra -ggdb -std=gnu99 -c ru.tab.c
+flex -i -Pru ru.l
+gcc -Wall -Wextra -ggdb -std=gnu99 -c lex.ru.c
+gcc  -o rt rt.o es.o ls.o n2h.o dr.o ru.tab.o lex.ru.o
+
+
+
+[dpeng12] test0 passed
+-----------------
+[dpeng12]  test0 : Simple establish link with two nodes
+[dpeng12]  Nodes number : 2; Time_between_event_sets: 7; Update_time: 1
+
+
+[dpeng12] test1 failed
+-----------------
+[dpeng12]  test1 : All three types of events with two nodes
+[dpeng12]  Nodes number : 2; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 2 events while Master had 4 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
+[dpeng12] test2 failed
+-----------------
+[dpeng12]  test2 : Establish links with multiple nodes
+[dpeng12]  Nodes number : 5; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 1 events while Master had 2 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
+[dpeng12] test3 failed
+-----------------
+[dpeng12]  test3 : Establish and update links with multiple nodes
+[dpeng12]  Nodes number : 4; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 1 events while Master had 3 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
+[dpeng12] test4 failed
+-----------------
+[dpeng12]  test4 : All three events with multiple nodes
+[dpeng12]  Nodes number : 4; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 1 events while Master had 2 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
+[dpeng12] test5 failed
+-----------------
+[dpeng12]  test5 : Establish and update links with multiple nodes
+[dpeng12]  Nodes number : 4; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 1 events while Master had 2 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
+[dpeng12] test6 failed
+-----------------
+[dpeng12]  test6 : Establish and tear down links with multiple nodes
+[dpeng12]  Nodes number : 4; Time_between_event_sets: 7; Update_time: 1
+[dpeng12]  For Node 0, Student had 1 events while Master had 2 events
+[dpeng12]  For Node 0, Last table of last event set differed from Master
+
+
