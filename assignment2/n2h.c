@@ -14,6 +14,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/ioctl.h>
 
 #include "common.h"
 #include "n2h.h"
@@ -42,12 +43,14 @@ int create_n2h()
 int bind_port(int port) {
     struct sockaddr_in servaddr;
 	int sock;
+	
    
     if ( (sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
         perror("socket creation failed"); 
         exit(EXIT_FAILURE); 
     } 
-	
+
+
     memset(&servaddr, 0, sizeof(servaddr)); 
 	
 	servaddr.sin_family    = AF_INET; // IPv4 
@@ -62,8 +65,6 @@ int bind_port(int port) {
     } 
 
 	return sock;
-
-	
 }
 
 

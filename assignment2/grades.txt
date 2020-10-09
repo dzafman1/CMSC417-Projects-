@@ -68,5 +68,3 @@ gcc  -o rt rt.o es.o ls.o n2h.o dr.o ru.tab.o lex.ru.o
 [dpeng12]  Nodes number : 4; Time_between_event_sets: 7; Update_time: 1
 [dpeng12]  For Node 0, Student had 1 events while Master had 2 events
 [dpeng12]  For Node 0, Last table of last event set differed from Master
-
-

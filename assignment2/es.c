@@ -158,7 +158,7 @@ void get_link_name(node m, node o, char *string){
 	strcat(strcat(string, me), other);
 }
 
-void send_rt(uint8_t *buffer){
+int send_rt(uint8_t *buffer){
 	struct rte *temp;
 	uint16_t counter = 1;
 	uint8_t type = 0x7;
@@ -171,11 +171,13 @@ void send_rt(uint8_t *buffer){
 		uint32_t cost_temp = temp->c;
 		cost_temp = htonl(cost_temp);
 		cost_temp = cost_temp << 8;
+		
 		memcpy(buffer + counter*4 + 1, &cost_temp, 3);
 		counter ++;
 	}
 	counter --;
 	memcpy(buffer + 2, &counter, 2);
+	return counter;
 }
 
 void walk_el(int update_time, int time_between, int verb)
@@ -194,58 +196,125 @@ void walk_el(int update_time, int time_between, int verb)
 	init_rt_from_n2h();
 	
 	alarm_handler(update_time);
-	
+	uint8_t old_link[MAX_NODES] = {0};
 
-	
 	for (el = g_el->next ; el != g_el ; el = el->next) {
+		
 		assert(el);
 		es_hd = el->es_head;
 		assert (es_hd);
 		struct pollfd sockets[MAX_NODES] = {0};
 		int socket_counter = 0;
 	
-		//printf("[es] >>>>>>>>>> Dispatch next event set <<<<<<<<<<<<<\n");
+		printf("[es] >>>>>>>>>> Dispatch next event set <<<<<<<<<<<<<\n");
 		for (es=es_hd->next ; es!=es_hd ; es=es->next) {
-			//printf("[es] Dispatching next event ... \n");
+			printf("[es] Dispatching next event ... \n");
 			
 			print_event(es);
 			
 			dispatch_event(es);
 		}
-
+		
+		
 		print_rt();
 
+		bool update_flag = false;
 		for (struct rte *i = get_rt_head()->next; i != get_rt_head(); i= i->next){
+			update_flag = false;
 			node me = get_myid();
 			node dest = i->d;
-			char string[8] = {0};
+			node nh = i->nh;
+			char dest_string[8] = {0};
+			char nh_string[8] = {0};
 
 			if(me < dest){
-				get_link_name(me, dest, string);
+				get_link_name(me, dest, dest_string);
 			}else{
-				get_link_name(dest, me, string);
+				get_link_name(dest, me, dest_string);
 			}
 
-			if(find_link(string) == 0x0 && i->nh == dest){
-				update_rte(dest, temp_neg, dest);
-				if(!verb){
-					print_rte(find_rte(dest));
-				}else{
-					print_rt();
+			if(me < nh){
+				get_link_name(me, nh, nh_string);
+			}else{
+				get_link_name(nh, me, nh_string);
+			}
+
+			if(dest == nh){
+				struct link *temp = find_link(nh_string);
+				if(temp == 0x0 && old_link[dest] != 0x0){
+					printf("dd\n");
+					update_rte(dest, temp_neg, dest);
+					update_flag = true;
+				}else if(temp!= 0x0 && old_link[dest] != temp->c){
+					
+					update_rte(dest, temp->c, dest);
+					update_flag = true;
 				}
 			}else{
-				struct link *lk = find_link(string);
-				if(i->c > lk->c || (i->c < lk->c && i->nh == dest)){
-					update_rte(dest, lk->c, dest);
-					if(!verb){
-						print_rte(find_rte(dest));
+				struct link *dest_lk = find_link(dest_string);
+				struct link *nh_lk = find_link(nh_string);
+				if(dest_lk == 0x0){
+					if(nh_lk == 0x0){
+						update_rte(dest, temp_neg, dest);
+						update_flag = true;
 					}else{
-						print_rt();
+						uint8_t old_nh_cost = old_link[nh];
+						uint8_t new_total_cost = i->c - old_nh_cost + nh_lk->c;
+						if(old_nh_cost != nh_lk->c){
+							update_rte(dest, new_total_cost, nh);
+							update_flag = true;
+						}
+					}
+				}else{
+					if(nh_lk == 0x0){
+						update_rte(dest, dest_lk->c, dest);
+						update_flag = true;
+					}else{
+						uint8_t old_nh_cost = old_link[nh];
+						uint8_t new_total_cost = i->c - old_nh_cost + nh_lk->c;
+						if(dest_lk -> c < new_total_cost){
+							update_rte(dest, dest_lk->c, dest);
+							update_flag = true;
+						}else{
+							if(old_nh_cost != nh_lk->c){
+								update_rte(dest, new_total_cost, nh);
+								update_flag = true;
+							}
+						}
 					}
 				}
 			}
+			if(update_flag == false){
+				break;
+			}
+			if(!verb){
+				print_rte(find_rte(dest));
+			}else{
+				print_rt();
+			}
 		}
 		
+		for(unsigned int i = 0; i<=MAX_NODES;i++){
+			node me = get_myid();
+			if(i == me){
+				continue;
+			}
+			char dest_string[8] = {0};
+			if(me < i){
+				get_link_name(me, i, dest_string);
+			}else{
+				get_link_name(i, me, dest_string);
+			}
+			
+			struct link *temp = find_link(dest_string);
+			
+			if(temp == 0x0){
+				old_link[i] = temp_neg;
+			}else{
+				old_link[i] = temp->c;
+				
+			}
+		}
 		
 		node nodes[MAX_NODES];
 		//Set  up poll for all links in this noded
@@ -261,7 +330,7 @@ void walk_el(int update_time, int time_between, int verb)
 				nodes[socket_counter] = i->peer0;
 				socket_counter ++;
 			}
-		}
+		}		
 	
 		//Running distance vector
 		for(;;){
@@ -269,68 +338,49 @@ void walk_el(int update_time, int time_between, int verb)
 			// 	nextSet = true;
 			// 	break;
 			// }
+			if (poll(sockets, socket_counter, 0) > 0){
+				for (int i = 0; i< socket_counter; i++){
+					if(sockets[i].revents && POLLIN){
+						uint8_t buffer[MAX_BUF_LEN];
+						struct sockaddr_storage clntAddr; 
+						socklen_t clntAddrLen = sizeof(clntAddr);
+						recvfrom(sockets[i].fd, buffer, MAX_BUF_LEN, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
+						
+						uint16_t num_updates;
+						memcpy(&num_updates,buffer+2,2);
+						num_updates = ntohs(num_updates);
 
-			if (poll(sockets, socket_counter, 0) < 0){
-				fprintf(stderr, "Poll error\n");
-				abort();
-			}
-		
-			for (int i = 0; i< socket_counter; i++){
-				if(sockets[i].revents && POLLIN){
-					uint8_t buffer[MAX_BUF_LEN];
-					struct sockaddr_storage clntAddr; 
-        			socklen_t clntAddrLen = sizeof(clntAddr);
-        			recvfrom(sockets[i].fd, buffer, MAX_BUF_LEN, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
-
-					uint16_t num_updates;
-					memcpy(&num_updates,buffer+2,2);
-					num_updates = ntohs(num_updates);
-
-					uint8_t dest;
-					uint32_t min_cost = 0;
-					uint32_t direct_cost = 0;
-					uint32_t costs[num_updates*2];
-					int counter = 0;
-
-					for(int j = 0; j < num_updates; j++){
-						memcpy(&dest, buffer+4+4*j, 1);
-						memcpy(&min_cost, buffer+4+4*j+1, 3);
-						min_cost = min_cost >> 8;
-						min_cost = ntohl(min_cost);
-
-						//Get the new link cost
-						if(get_myid() == dest){
-							direct_cost = min_cost;
-							//Change direction to make sure it's in the POV of our own node
-							costs[counter] = nodes[i];
-						}else{
-							costs[counter] = dest;
-						}
-						costs[counter+1] = min_cost;
-						counter += 2;
-						min_cost = 0;
-					}
-
+						uint8_t dest;
+						uint32_t min_cost = 0;
 					
-					for(int k =0 ;k < num_updates*2; k+=2){
-						unsigned int new_cost = costs[k+1] + direct_cost;
-
-						struct rte *old_rte = find_rte(costs[k]);
-					
-						if(new_cost < old_rte->c){
-							update_rte(costs[k], new_cost, nodes[i]);
-							if(!verb){
-					 			print_rte(find_rte(costs[k]));
-							}else{
-								print_rt();
+						for(int j = 0; j < num_updates; j++){
+							memcpy(&dest, buffer+4+4*j, 1);
+							memcpy(&min_cost, buffer+4+4*j+1, 3);
+							min_cost = min_cost >> 8;
+							min_cost = ntohl(min_cost);
+							
+							printf("received update dest %d mincost %d\n", dest, min_cost);
+							struct rte *r = find_rte(nodes[i]);
+							//Get the new link cost
+							if(get_myid() == dest){
+								continue;
 							}
+							
+							if(r->c > min_cost + old_link[nodes[i]]){
+								update_rte(dest, min_cost + old_link[nodes[i]], nodes[i]);
+								if(!verb){
+									print_rte(find_rte(dest));
+								}else{
+									print_rt();
+								}
+							}
+							min_cost = 0;
 						}
 					}
 				}
 			}
 
 			if(flag == true){
-
 				for (struct link *i = get_head()->next; i != get_head(); i= i->next){
 					if(i->sockfd0 == -1 && i->sockfd1 == -1){
 						continue;
@@ -347,6 +397,7 @@ void walk_el(int update_time, int time_between, int verb)
 						destport = i->port0;
 						n = i->peer0;
 					}
+					
 					struct addrinfo addrCriteria; // Criteria for address match
 					memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
 					addrCriteria.ai_family = AF_UNSPEC; // Any address family
@@ -360,12 +411,15 @@ void walk_el(int update_time, int time_between, int verb)
 						fprintf(stderr, "getaddrinfo failed\n");
 					
 					uint8_t buffer[1024] = {0};
-					send_rt(buffer);
-					sendto(socket, buffer, 1024, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+					int num_entry = send_rt(buffer);
+					uint8_t new_buffer[(num_entry +1)*4];
+					
+					memcpy(new_buffer, buffer, (num_entry +1)*4);
+					sendto(socket, buffer, (num_entry +1)*4, 0, servAddr->ai_addr, servAddr->ai_addrlen);
 				}
 				flag = false;
 			}
-				
+			
 			if(timer >= time_between){
 				timer = 0;
 				break;
@@ -373,8 +427,6 @@ void walk_el(int update_time, int time_between, int verb)
 		}
 
 	}
-
-	
 }
 
 
@@ -489,4 +541,3 @@ struct es *geteventbylink(char *lname)
 }
 
 #endif
-

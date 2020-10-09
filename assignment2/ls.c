@@ -87,6 +87,7 @@ struct link *find_link(char *n)
 
 int del_link(char *name)
 {
+	
 	struct link *i = find_link(name);
 	assert (i);
 	DelDQ(i);

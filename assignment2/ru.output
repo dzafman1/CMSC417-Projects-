@@ -1,0 +1,472 @@
+Grammar
+
+    0 $accept: ru $end
+
+    1 ru: %empty
+    2   | node_line ru
+    3   | open_paren_n event_set close_paren nl ru
+    4   | open_paren_n nl event_set close_paren nl ru
+
+    5 open_paren_n: open_paren
+
+    6 node_line: token_node number name_t nl
+
+    7 event_set: %empty
+    8          | es_link event_set
+    9          | td_link event_set
+   10          | ud_link event_set
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost number token_name name_t nl
+
+   12 td_link: teardown_link name_t nl
+
+   13 ud_link: update_link name_t token_cost number nl
+
+
+Terminals, with rules where they appear
+
+$end (0) 0
+error (256)
+open_paren (258) 5
+close_paren (259) 3 4
+establish_link (260) 11
+teardown_link (261) 12
+update_link (262) 13
+token_node (263) 6 11
+token_port (264) 11
+token_cost (265) 11 13
+token_name (266) 11
+nl (267) 3 4 6 11 12 13
+name_t <str> (268) 6 11 12 13
+number <n> (269) 6 11 13
+
+
+Nonterminals, with rules where they appear
+
+$accept (15)
+    on left: 0
+ru (16)
+    on left: 1 2 3 4, on right: 0 2 3 4
+open_paren_n (17)
+    on left: 5, on right: 3 4
+node_line (18)
+    on left: 6, on right: 2
+event_set (19)
+    on left: 7 8 9 10, on right: 3 4 8 9 10
+es_link (20)
+    on left: 11, on right: 8
+td_link (21)
+    on left: 12, on right: 9
+ud_link (22)
+    on left: 13, on right: 10
+
+
+State 0
+
+    0 $accept: . ru $end
+
+    open_paren  shift, and go to state 1
+    token_node  shift, and go to state 2
+
+    $default  reduce using rule 1 (ru)
+
+    ru            go to state 3
+    open_paren_n  go to state 4
+    node_line     go to state 5
+
+
+State 1
+
+    5 open_paren_n: open_paren .
+
+    $default  reduce using rule 5 (open_paren_n)
+
+
+State 2
+
+    6 node_line: token_node . number name_t nl
+
+    number  shift, and go to state 6
+
+
+State 3
+
+    0 $accept: ru . $end
+
+    $end  shift, and go to state 7
+
+
+State 4
+
+    3 ru: open_paren_n . event_set close_paren nl ru
+    4   | open_paren_n . nl event_set close_paren nl ru
+
+    establish_link  shift, and go to state 8
+    teardown_link   shift, and go to state 9
+    update_link     shift, and go to state 10
+    nl              shift, and go to state 11
+
+    $default  reduce using rule 7 (event_set)
+
+    event_set  go to state 12
+    es_link    go to state 13
+    td_link    go to state 14
+    ud_link    go to state 15
+
+
+State 5
+
+    2 ru: node_line . ru
+
+    open_paren  shift, and go to state 1
+    token_node  shift, and go to state 2
+
+    $default  reduce using rule 1 (ru)
+
+    ru            go to state 16
+    open_paren_n  go to state 4
+    node_line     go to state 5
+
+
+State 6
+
+    6 node_line: token_node number . name_t nl
+
+    name_t  shift, and go to state 17
+
+
+State 7
+
+    0 $accept: ru $end .
+
+    $default  accept
+
+
+State 8
+
+   11 es_link: establish_link . token_node number token_port number token_node number token_port number token_cost number token_name name_t nl
+
+    token_node  shift, and go to state 18
+
+
+State 9
+
+   12 td_link: teardown_link . name_t nl
+
+    name_t  shift, and go to state 19
+
+
+State 10
+
+   13 ud_link: update_link . name_t token_cost number nl
+
+    name_t  shift, and go to state 20
+
+
+State 11
+
+    4 ru: open_paren_n nl . event_set close_paren nl ru
+
+    establish_link  shift, and go to state 8
+    teardown_link   shift, and go to state 9
+    update_link     shift, and go to state 10
+
+    $default  reduce using rule 7 (event_set)
+
+    event_set  go to state 21
+    es_link    go to state 13
+    td_link    go to state 14
+    ud_link    go to state 15
+
+
+State 12
+
+    3 ru: open_paren_n event_set . close_paren nl ru
+
+    close_paren  shift, and go to state 22
+
+
+State 13
+
+    8 event_set: es_link . event_set
+
+    establish_link  shift, and go to state 8
+    teardown_link   shift, and go to state 9
+    update_link     shift, and go to state 10
+
+    $default  reduce using rule 7 (event_set)
+
+    event_set  go to state 23
+    es_link    go to state 13
+    td_link    go to state 14
+    ud_link    go to state 15
+
+
+State 14
+
+    9 event_set: td_link . event_set
+
+    establish_link  shift, and go to state 8
+    teardown_link   shift, and go to state 9
+    update_link     shift, and go to state 10
+
+    $default  reduce using rule 7 (event_set)
+
+    event_set  go to state 24
+    es_link    go to state 13
+    td_link    go to state 14
+    ud_link    go to state 15
+
+
+State 15
+
+   10 event_set: ud_link . event_set
+
+    establish_link  shift, and go to state 8
+    teardown_link   shift, and go to state 9
+    update_link     shift, and go to state 10
+
+    $default  reduce using rule 7 (event_set)
+
+    event_set  go to state 25
+    es_link    go to state 13
+    td_link    go to state 14
+    ud_link    go to state 15
+
+
+State 16
+
+    2 ru: node_line ru .
+
+    $default  reduce using rule 2 (ru)
+
+
+State 17
+
+    6 node_line: token_node number name_t . nl
+
+    nl  shift, and go to state 26
+
+
+State 18
+
+   11 es_link: establish_link token_node . number token_port number token_node number token_port number token_cost number token_name name_t nl
+
+    number  shift, and go to state 27
+
+
+State 19
+
+   12 td_link: teardown_link name_t . nl
+
+    nl  shift, and go to state 28
+
+
+State 20
+
+   13 ud_link: update_link name_t . token_cost number nl
+
+    token_cost  shift, and go to state 29
+
+
+State 21
+
+    4 ru: open_paren_n nl event_set . close_paren nl ru
+
+    close_paren  shift, and go to state 30
+
+
+State 22
+
+    3 ru: open_paren_n event_set close_paren . nl ru
+
+    nl  shift, and go to state 31
+
+
+State 23
+
+    8 event_set: es_link event_set .
+
+    $default  reduce using rule 8 (event_set)
+
+
+State 24
+
+    9 event_set: td_link event_set .
+
+    $default  reduce using rule 9 (event_set)
+
+
+State 25
+
+   10 event_set: ud_link event_set .
+
+    $default  reduce using rule 10 (event_set)
+
+
+State 26
+
+    6 node_line: token_node number name_t nl .
+
+    $default  reduce using rule 6 (node_line)
+
+
+State 27
+
+   11 es_link: establish_link token_node number . token_port number token_node number token_port number token_cost number token_name name_t nl
+
+    token_port  shift, and go to state 32
+
+
+State 28
+
+   12 td_link: teardown_link name_t nl .
+
+    $default  reduce using rule 12 (td_link)
+
+
+State 29
+
+   13 ud_link: update_link name_t token_cost . number nl
+
+    number  shift, and go to state 33
+
+
+State 30
+
+    4 ru: open_paren_n nl event_set close_paren . nl ru
+
+    nl  shift, and go to state 34
+
+
+State 31
+
+    3 ru: open_paren_n event_set close_paren nl . ru
+
+    open_paren  shift, and go to state 1
+    token_node  shift, and go to state 2
+
+    $default  reduce using rule 1 (ru)
+
+    ru            go to state 35
+    open_paren_n  go to state 4
+    node_line     go to state 5
+
+
+State 32
+
+   11 es_link: establish_link token_node number token_port . number token_node number token_port number token_cost number token_name name_t nl
+
+    number  shift, and go to state 36
+
+
+State 33
+
+   13 ud_link: update_link name_t token_cost number . nl
+
+    nl  shift, and go to state 37
+
+
+State 34
+
+    4 ru: open_paren_n nl event_set close_paren nl . ru
+
+    open_paren  shift, and go to state 1
+    token_node  shift, and go to state 2
+
+    $default  reduce using rule 1 (ru)
+
+    ru            go to state 38
+    open_paren_n  go to state 4
+    node_line     go to state 5
+
+
+State 35
+
+    3 ru: open_paren_n event_set close_paren nl ru .
+
+    $default  reduce using rule 3 (ru)
+
+
+State 36
+
+   11 es_link: establish_link token_node number token_port number . token_node number token_port number token_cost number token_name name_t nl
+
+    token_node  shift, and go to state 39
+
+
+State 37
+
+   13 ud_link: update_link name_t token_cost number nl .
+
+    $default  reduce using rule 13 (ud_link)
+
+
+State 38
+
+    4 ru: open_paren_n nl event_set close_paren nl ru .
+
+    $default  reduce using rule 4 (ru)
+
+
+State 39
+
+   11 es_link: establish_link token_node number token_port number token_node . number token_port number token_cost number token_name name_t nl
+
+    number  shift, and go to state 40
+
+
+State 40
+
+   11 es_link: establish_link token_node number token_port number token_node number . token_port number token_cost number token_name name_t nl
+
+    token_port  shift, and go to state 41
+
+
+State 41
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port . number token_cost number token_name name_t nl
+
+    number  shift, and go to state 42
+
+
+State 42
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number . token_cost number token_name name_t nl
+
+    token_cost  shift, and go to state 43
+
+
+State 43
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost . number token_name name_t nl
+
+    number  shift, and go to state 44
+
+
+State 44
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost number . token_name name_t nl
+
+    token_name  shift, and go to state 45
+
+
+State 45
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost number token_name . name_t nl
+
+    name_t  shift, and go to state 46
+
+
+State 46
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost number token_name name_t . nl
+
+    nl  shift, and go to state 47
+
+
+State 47
+
+   11 es_link: establish_link token_node number token_port number token_node number token_port number token_cost number token_name name_t nl .
+
+    $default  reduce using rule 11 (es_link)
