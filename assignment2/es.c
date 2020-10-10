@@ -134,14 +134,37 @@ void add_to_last_es(e_type ev,
 }
 
 
-int timer = 0;
-bool flag = true;
-void alarm_handler(int time_between_es){
+int alarm_counter = 0, long_time, short_time;
+bool es_flag_flag = false, es_flag = false, send_flag = true;
+
+void alarm_handler(){
+	int remainder = long_time % short_time;
+	int times = long_time / short_time;
 	
-	timer += time_between_es;
-	flag = true;
-	signal(SIGALRM, alarm_handler); 
-	alarm(time_between_es);
+	if(alarm_counter == times){
+		if(remainder == 0){
+			alarm_counter = 0;
+			es_flag = true;
+			send_flag = true;
+			alarm(short_time);
+		}else{
+			alarm_counter = -1;
+			es_flag_flag = true;
+			alarm(remainder);
+		}
+	}else{
+		if(es_flag_flag == true){
+			es_flag = true;
+			es_flag_flag = false;
+			alarm(short_time - remainder);
+		}else{
+			alarm_counter ++;
+			es_flag = false;
+			send_flag = true;
+			
+			alarm(short_time);
+		}
+	}
 }
 /*
  * A simple walk of event sets: dispatch and print a event SET every 2 sec
@@ -168,15 +191,25 @@ int send_rt(uint8_t *buffer){
 
 	for (temp = get_rt_head()->next; temp != get_rt_head(); temp = temp->next){
 		memcpy(buffer + counter*4, &(temp->d), 1);
-		uint32_t cost_temp = temp->c;
-		cost_temp = htonl(cost_temp);
-		cost_temp = cost_temp << 8;
 		
-		memcpy(buffer + counter*4 + 1, &cost_temp, 3);
+		uint8_t cost_temp[4] = {0};
+		memcpy(cost_temp, &(temp->c),4);
+		
+		uint8_t t1[3];
+		uint8_t t2[3];
+		memcpy(t1, cost_temp, 1);
+		memcpy(t1 + 1, cost_temp+1, 1);
+		memcpy(t1 + 2, cost_temp + 2, 1);
+		t2[0] = t1[2];
+		t2[1] = t1[1];
+		t2[2] = t1[0];
+
+		memcpy(buffer + counter*4 + 1, t2, 3);
 		counter ++;
 	}
 	counter --;
-	memcpy(buffer + 2, &counter, 2);
+	uint16_t counter_n = ntohs(counter);
+	memcpy(buffer + 2, &counter_n, 2);
 	return counter;
 }
 
@@ -195,23 +228,24 @@ void walk_el(int update_time, int time_between, int verb)
 	create_rt();
 	init_rt_from_n2h();
 	
-	alarm_handler(update_time);
+	long_time = time_between;
+	short_time = update_time;
+	signal(SIGALRM, alarm_handler);
+	alarm_handler();
 	uint8_t old_link[MAX_NODES] = {0};
-
+	int dontread =0;
 	for (el = g_el->next ; el != g_el ; el = el->next) {
-		
+		dontread = 0;
 		assert(el);
 		es_hd = el->es_head;
 		assert (es_hd);
 		struct pollfd sockets[MAX_NODES] = {0};
 		int socket_counter = 0;
-	
+
 		printf("[es] >>>>>>>>>> Dispatch next event set <<<<<<<<<<<<<\n");
 		for (es=es_hd->next ; es!=es_hd ; es=es->next) {
 			printf("[es] Dispatching next event ... \n");
-			
 			print_event(es);
-			
 			dispatch_event(es);
 		}
 		
@@ -227,6 +261,7 @@ void walk_el(int update_time, int time_between, int verb)
 			char dest_string[8] = {0};
 			char nh_string[8] = {0};
 
+			
 			if(me < dest){
 				get_link_name(me, dest, dest_string);
 			}else{
@@ -239,14 +274,15 @@ void walk_el(int update_time, int time_between, int verb)
 				get_link_name(nh, me, nh_string);
 			}
 
+			
 			if(dest == nh){
 				struct link *temp = find_link(nh_string);
+			
 				if(temp == 0x0 && old_link[dest] != 0x0){
-					printf("dd\n");
+					
 					update_rte(dest, temp_neg, dest);
 					update_flag = true;
 				}else if(temp!= 0x0 && old_link[dest] != temp->c){
-					
 					update_rte(dest, temp->c, dest);
 					update_flag = true;
 				}
@@ -284,13 +320,11 @@ void walk_el(int update_time, int time_between, int verb)
 					}
 				}
 			}
-			if(update_flag == false){
-				break;
-			}
-			if(!verb){
-				print_rte(find_rte(dest));
-			}else{
-				print_rt();
+			if(update_flag == true){
+				if(!verb)
+					print_rte(find_rte(dest));
+				else
+					print_rt();
 			}
 		}
 		
@@ -338,7 +372,8 @@ void walk_el(int update_time, int time_between, int verb)
 			// 	nextSet = true;
 			// 	break;
 			// }
-			if (poll(sockets, socket_counter, 0) > 0){
+			
+			if (poll(sockets, socket_counter, 0) > 0 ){
 				for (int i = 0; i< socket_counter; i++){
 					if(sockets[i].revents && POLLIN){
 						uint8_t buffer[MAX_BUF_LEN];
@@ -346,41 +381,52 @@ void walk_el(int update_time, int time_between, int verb)
 						socklen_t clntAddrLen = sizeof(clntAddr);
 						recvfrom(sockets[i].fd, buffer, MAX_BUF_LEN, 0, (struct sockaddr *) &clntAddr, &clntAddrLen); 
 						
-						uint16_t num_updates;
-						memcpy(&num_updates,buffer+2,2);
-						num_updates = ntohs(num_updates);
+						if(dontread >=2){
+							uint16_t num_updates;
+							memcpy(&num_updates,buffer+2,2);
+							num_updates = ntohs(num_updates);
 
-						uint8_t dest;
-						uint32_t min_cost = 0;
-					
-						for(int j = 0; j < num_updates; j++){
-							memcpy(&dest, buffer+4+4*j, 1);
-							memcpy(&min_cost, buffer+4+4*j+1, 3);
-							min_cost = min_cost >> 8;
-							min_cost = ntohl(min_cost);
-							
-							printf("received update dest %d mincost %d\n", dest, min_cost);
-							struct rte *r = find_rte(nodes[i]);
-							//Get the new link cost
-							if(get_myid() == dest){
-								continue;
-							}
-							
-							if(r->c > min_cost + old_link[nodes[i]]){
-								update_rte(dest, min_cost + old_link[nodes[i]], nodes[i]);
-								if(!verb){
-									print_rte(find_rte(dest));
-								}else{
-									print_rt();
+							uint8_t dest;
+							uint8_t t1[3];
+							uint8_t t2[3];
+							uint32_t min_cost = 0;
+							for(int j = 0; j < num_updates; j++){
+								memcpy(&dest, buffer+4+4*j, 1);
+								memcpy(&t1, buffer+4+4*j+1, 3);
+								t2[0] = t1[2];
+								t2[1] = t1[1];
+								t2[2] = t1[0];
+								memcpy(&min_cost, t2, 3);
+
+								
+								//printf("node %d received from %d dest %d min_cost %d\n",get_myid(),nodes[i], dest, min_cost);
+								
+								if(get_myid() == dest){
+									continue;
 								}
+								struct rte *r = find_rte(dest);
+								//printf("nh %d nodesi %d\n", r->nh, nodes[i]);
+								
+								//printf("rte cost %d new cost%d", r->c, min_cost + old_link[nodes[i]]);
+								//Get the new link cost
+							
+								if(r->c > min_cost + old_link[nodes[i]] || (r->nh == nodes[i] && r->c < min_cost + old_link[nodes[i]])){
+									update_rte(dest, min_cost + old_link[nodes[i]], nodes[i]);
+									if(!verb){
+										print_rte(find_rte(dest));
+									}else{
+										print_rt();
+									}
+								}
+								min_cost = 0;
 							}
-							min_cost = 0;
 						}
 					}
 				}
 			}
 
-			if(flag == true){
+			if(send_flag == true){
+				dontread ++;
 				for (struct link *i = get_head()->next; i != get_head(); i= i->next){
 					if(i->sockfd0 == -1 && i->sockfd1 == -1){
 						continue;
@@ -416,12 +462,12 @@ void walk_el(int update_time, int time_between, int verb)
 					
 					memcpy(new_buffer, buffer, (num_entry +1)*4);
 					sendto(socket, buffer, (num_entry +1)*4, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+					send_flag = false;
 				}
-				flag = false;
 			}
 			
-			if(timer >= time_between){
-				timer = 0;
+			if(es_flag == true){
+				es_flag = false;
 				break;
 			}
 		}
