@@ -134,36 +134,37 @@ void add_to_last_es(e_type ev,
 }
 
 
-int alarm_counter = 0, long_time, short_time;
+int alarm_counter = 0, long_time, short_time, lt;
 bool es_flag_flag = false, es_flag = false, send_flag = true;
 
 void alarm_handler(){
 	int remainder = long_time % short_time;
 	int times = long_time / short_time;
 	
-	if(alarm_counter == times){
+	if(es_flag_flag == true){
+		
+		es_flag = true;
+		long_time += lt;
+		es_flag_flag = false;
+		alarm(short_time - remainder);
+	}else if(alarm_counter == times){
 		if(remainder == 0){
-			alarm_counter = 0;
+			//alarm_counter = 0;
 			es_flag = true;
+			long_time += lt;
 			send_flag = true;
 			alarm(short_time);
 		}else{
-			alarm_counter = -1;
+			//alarm_counter = 0;
 			es_flag_flag = true;
 			alarm(remainder);
 		}
 	}else{
-		if(es_flag_flag == true){
-			es_flag = true;
-			es_flag_flag = false;
-			alarm(short_time - remainder);
-		}else{
-			alarm_counter ++;
-			es_flag = false;
-			send_flag = true;
-			
-			alarm(short_time);
-		}
+		alarm_counter ++;
+		es_flag = false;
+		send_flag = true;
+		
+		alarm(short_time);
 	}
 }
 /*
@@ -229,6 +230,7 @@ void walk_el(int update_time, int time_between, int verb)
 	init_rt_from_n2h();
 	
 	long_time = time_between;
+	lt = long_time;
 	short_time = update_time;
 	signal(SIGALRM, alarm_handler);
 	alarm_handler();
@@ -279,7 +281,6 @@ void walk_el(int update_time, int time_between, int verb)
 				struct link *temp = find_link(nh_string);
 			
 				if(temp == 0x0 && old_link[dest] != 0x0){
-					
 					update_rte(dest, temp_neg, dest);
 					update_flag = true;
 				}else if(temp!= 0x0 && old_link[dest] != temp->c){
@@ -321,9 +322,8 @@ void walk_el(int update_time, int time_between, int verb)
 				}
 			}
 			if(update_flag == true){
-				if(!verb)
-					print_rte(find_rte(dest));
-				else
+				print_rte(find_rte(dest));
+				if(verb)
 					print_rt();
 			}
 		}
@@ -409,16 +409,16 @@ void walk_el(int update_time, int time_between, int verb)
 								
 								//printf("rte cost %d new cost%d", r->c, min_cost + old_link[nodes[i]]);
 								//Get the new link cost
-							
+								if(min_cost > 16770000){
+									continue;
+								}
 								if(r->c > min_cost + old_link[nodes[i]] || (r->nh == nodes[i] && r->c < min_cost + old_link[nodes[i]])){
 									update_rte(dest, min_cost + old_link[nodes[i]], nodes[i]);
-									if(!verb){
-										print_rte(find_rte(dest));
-									}else{
-										print_rt();
-									}
+									print_rte(find_rte(dest));
 								}
 								min_cost = 0;
+								if(verb)
+									print_rt();	
 							}
 						}
 					}
@@ -466,7 +466,7 @@ void walk_el(int update_time, int time_between, int verb)
 				}
 			}
 			
-			if(es_flag == true){
+			if(es_flag == true && el->next !=g_el){
 				es_flag = false;
 				break;
 			}
