@@ -409,10 +409,11 @@ void walk_el(int update_time, int time_between, int verb)
 								
 								//printf("rte cost %d new cost%d", r->c, min_cost + old_link[nodes[i]]);
 								//Get the new link cost
-								if(min_cost > 16770000){
-									continue;
-								}
-								if(r->c > min_cost + old_link[nodes[i]] || (r->nh == nodes[i] && r->c < min_cost + old_link[nodes[i]])){
+								// if(min_cost > 16770000){
+								// 	continue;
+								// }
+								if((r->c > (min_cost + old_link[nodes[i]] )&& min_cost < 16770000)|| 
+								(r->nh == nodes[i] && r->c < min_cost + old_link[nodes[i]]) ){
 									update_rte(dest, min_cost + old_link[nodes[i]], nodes[i]);
 									print_rte(find_rte(dest));
 								}
