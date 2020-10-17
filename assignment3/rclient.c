@@ -57,7 +57,6 @@ void send_n_bytes(void *buffer, int bytes_expected, int send_socket){
     while(bytes_sent < bytes_expected){
         temp = send(send_socket, buffer + bytes_sent, bytes_expected-bytes_sent, 0);
         if(temp == -1){
-            printf("%d\n", send_socket);
             fprintf(stderr, "send failed\n");
             break;
         }
@@ -94,8 +93,8 @@ void sendNick(char *command, char *name, int socket){
         memcpy(buffer, &namLen, 4);
         send_n_bytes(buffer, len_eight+8, socket);
         
-        uint8_t trash[8];
-        read_n_bytes(&trash, 8, socket);
+        //uint8_t trash[8];
+       // read_n_bytes(&trash, 8, socket);
         strcpy(name, nickname);
         printf("Changed nick to '%s'.\n", nickname);
     }
@@ -148,10 +147,12 @@ void sendJoin(char *command, char *oldRoom, int *inARoom, int socket){
 
     char *firstSpace = strchr(command, ' ');
     char *secondSpace = strchr(firstSpace + 1, ' ');
-    if(secondSpace == command + strlen(command)){
+    if(secondSpace == 0x0){
         //no pasword
         strcpy(room, firstSpace + 1);
-        room[strlen(room-1)] = 0;
+   
+        room[strlen(room)-1] = 0;
+        
     }else{
         strncpy(room, firstSpace + 1, secondSpace-firstSpace-1);
         strcpy(password, secondSpace+1);
@@ -204,10 +205,12 @@ void sendJoin(char *command, char *oldRoom, int *inARoom, int socket){
     }
 }
 
-void sendLeave(char *room, int *connected, int *inARoom, int socket){
-    uint8_t buffer[8];
+void sendLeave(char *room, int inARoom, int socket){
+    uint8_t buffer[7];
     uint32_t len = 0;
     len = htonl(len);
+    
+    memcpy(buffer, &len, 4);
 
     uint32_t leaveFlag = 0x041706;
     uint8_t t0[4], t1[3];
@@ -217,17 +220,16 @@ void sendLeave(char *room, int *connected, int *inARoom, int socket){
     t1[2] = t0[0];
     memcpy(buffer + 4, t1, 3);
 
-    if(*inARoom){
-        *inARoom = 0;
+    if(inARoom){
         send_n_bytes(buffer, 7, socket);
-        read_n_bytes(buffer, 8, socket);
+        //uint8_t trash[8];
+        //read_n_bytes(trash, 8, socket);
         printf("Left room '%s'.\n", room);
         memset(room, 0, 256);
     }else{
-        *connected = 0;
+       
         send_n_bytes(buffer, 7, socket);
-        read_n_bytes(buffer, 8, socket);
-        close(socket);
+       
         printf("Left the chat server.\n");
         printf("Disconnected from the chat server (Reason: Server closed the connection)\n");
     }
@@ -407,12 +409,12 @@ int main(){
     while(1){
        
         char command[MAX_COMMAND_LEN] = {0};
-
+        
         if (poll(sockets, 2, 0) > 0 ){
-           
-            if(sockets[0].revents && POLLIN){
-                //standard input
+            
+            if(sockets[0].revents && POLLIN){       
                 fgets(command, MAX_COMMAND_LEN, stdin);
+                
                 if(strstr(command, "\\quit") == command){
                     printf("Quitting...\n");
                     if(connected){
@@ -445,9 +447,22 @@ int main(){
                         sendJoin(command, room, &inARoom, socket);
                     }else if(strstr(command, "\\leave") == command){
                         sendFlag = 0;
-                        signal(SIGALRM, alarmHandler);
-                        alarm(6);
-                        sendLeave(room, &connected, &inARoom, socket);
+                        if(inARoom){
+                            sendLeave(room, 1, socket);
+                            inARoom = 0;
+                            signal(SIGALRM, alarmHandler);
+                            alarm(6);        
+                        }else{
+                            alarm(0);
+                            sendLeave(room, 0, socket);
+                            connected = 0;
+                            inARoom = 0;
+                            socket = -1;
+                            sockets[1].fd = -1;
+                            memset(room, 0, 256);
+                            memset(name, 0, 256);
+                            close(socket);
+                        }
                     }else if(strstr(command, "\\list users") == command){
                         sendFlag = 0;
                         signal(SIGALRM, alarmHandler);
@@ -494,9 +509,9 @@ int main(){
                         sockets[1].events = POLLIN;
                     }else{
                         printf("Not connected to a chat server.\n");
+                    }
                 }
             }
-        }
 
         if(connected && sockets[1].revents && POLLIN){
             uint32_t totalLen;
@@ -553,6 +568,7 @@ int main(){
         }
     }
        
+
     if(sendFlag && connected){
         sendFlag = 0;
 
@@ -579,7 +595,6 @@ int main(){
         
     }
     if(socket >= 0){
-        sockets[1].fd = -1;
         close(socket);
     }
 }
