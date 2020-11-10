@@ -98,7 +98,7 @@ void sha1Hash(char *target, uint8_t *result){
 	sha1sum_destroy(ctx);
 }
 
-void read_n_bytes(void *buffer, int bytes_expected, int read_socket){
+int read_n_bytes(void *buffer, int bytes_expected, int read_socket){
     int bytes_received = 0;
     int temp = 0;
 
@@ -106,14 +106,15 @@ void read_n_bytes(void *buffer, int bytes_expected, int read_socket){
         temp = recv(read_socket, buffer + bytes_received, bytes_expected-bytes_received, 0);
         if(temp == -1){
             fprintf(stderr, "read failed\n");
-            break;
+            return -1;
         }
         bytes_received += temp;
     }
 
+	return bytes_received;
 }
 
-void send_n_bytes(void *buffer, int bytes_expected, int send_socket){
+int send_n_bytes(void *buffer, int bytes_expected, int send_socket){
     int bytes_sent = 0;
     int temp = 0;
 
@@ -121,10 +122,12 @@ void send_n_bytes(void *buffer, int bytes_expected, int send_socket){
         temp = send(send_socket, buffer + bytes_sent, bytes_expected-bytes_sent, 0);
         if(temp == -1){
             fprintf(stderr, "send failed\n");
-            break;
+            return -1;
         }
         bytes_sent += temp;
     }
+
+	return bytes_sent;
 }
 
 void servSockSetUp(int *servSock, char *addr, int port){
@@ -152,7 +155,7 @@ void servSockSetUp(int *servSock, char *addr, int port){
 
 void printHash(uint8_t *hash){
 	for(size_t i = 0; i < 20; ++i) {
-			printf("%02x", hash[i]);
+		printf("%02x", hash[i]);
 	}
 }
 
@@ -199,6 +202,7 @@ int createSendSocket(char *ipAddr, int port){
 	struct timeval timeout;
 	timeout.tv_sec  = 0;  
 	timeout.tv_usec = 5000 * 1000; //timeout in 0.5 seconds
+	setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 	setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
     if (connect(clientSock, (struct sockaddr *) &servAddr, sizeof(servAddr)) < 0){
@@ -236,15 +240,34 @@ int between(uint8_t *btw, uint8_t *h1, uint8_t *h2){
 	}
 }
 
-struct Node *closetPrecedingNode(uint8_t *ID, struct Node *fingerTable, struct Node *self){
+struct Node *closetPrecedingNode(uint8_t *ID, struct Node *fingerTable, struct Node *successorList, int r, struct Node *self){
+	struct Node *closet = NULL;
+	for (int i = r-1; i>=0;i --){
+		struct Node *nI = &successorList[i];
+		struct Node empty = {0};
+		if(memcmp(&empty, nI, sizeof(struct Node)) !=0 && between(nI->ID, self->ID, ID) ){
+			closet = nI;
+			break;
+		}
+	}
 	for(int i = 160; i>=1; i--){
 		struct Node *nI = &fingerTable[i];
 		struct Node empty = {0};
-		if(between(nI->ID, self->ID, ID) && memcmp(&empty, nI, sizeof(struct Node)) !=0 ){
-			return nI;
+		if(memcmp(&empty, nI, sizeof(struct Node)) != 0 && between(nI->ID, self->ID, ID) ){
+			if(closet != NULL){
+				if(between(nI->ID, closet->ID, ID)){
+					closet = nI;
+				}
+			}else{
+				closet = nI;
+			}
+			break;
 		}
 	}
-	return self;
+	if (closet != NULL)
+		return closet;
+	else
+		return self;
 }
 
 void printNode(struct Node *node){
@@ -254,6 +277,7 @@ void printNode(struct Node *node){
 
 int sendFindSuccessorRPC(struct Node *nodeToAsk, uint8_t *ID){
 	int sendSocket = createSendSocket(nodeToAsk->ipAddr, nodeToAsk->port);
+
 
 	if(sendSocket == -1){
 		return -1;
@@ -284,12 +308,30 @@ int sendFindSuccessorRPC(struct Node *nodeToAsk, uint8_t *ID){
 	uint64_t lenInNB = htobe64(8+callSerialLen);
 	memcpy(buffer, &lenInNB, 8);
 	memcpy(buffer+8, callSerial, callSerialLen);
-	send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	int success = send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+
+	if(success == -1)
+		return -1;
 	return sendSocket;
 }
 
+void clearNode(struct Node *successorList, int r, struct Node* fingerTable, struct Node *succ, struct Node *nodeToClear){
+	for(int i = 0; i<r; i++){
+		if(strcmp(successorList[i].ipAddr, nodeToClear->ipAddr) == 0 && successorList[i].port == nodeToClear->port){
+			memset(&successorList[i], 0, sizeof(struct Node));
+			if(i == 0)
+				memset(succ, 0, sizeof(struct Node));
+		}
+	}
+	for(int i = 1; i<160; i++){
+		if(strcmp(fingerTable[i].ipAddr, nodeToClear->ipAddr) == 0 && fingerTable[i].port == nodeToClear->port){
+			memset(&fingerTable[i], 0, sizeof(struct Node));
+		}
+	}
+}
+
 int handleFindSuccessorRPC(uint8_t **findSuccessorRetSerial, size_t *findSuccessorRetSerialLen, uint8_t *feedData, size_t feedDataLen, struct Node *self,
-							struct Node *successorList, struct Node *fingerTable){
+							struct Node *succ, struct Node *successorList, int r, struct Node *fingerTable){
 	Protocol__FindSuccessorArgs *args = protocol__find_successor_args__unpack(NULL, feedDataLen, feedData);
 
 	if(args == NULL) {
@@ -316,7 +358,7 @@ int handleFindSuccessorRPC(uint8_t **findSuccessorRetSerial, size_t *findSuccess
 		retSucs.node = &node;
 		
 	}else{
-		struct Node *cPN = closetPrecedingNode(targetID, fingerTable, self);
+		struct Node *cPN = closetPrecedingNode(targetID, fingerTable, successorList, r, self);
 		if(cPN == self){
 			//If cPN returns self
 			node.address = self->ipAddr;
@@ -327,6 +369,12 @@ int handleFindSuccessorRPC(uint8_t **findSuccessorRetSerial, size_t *findSuccess
 		}else{
 			//If cPN requires asking some other nodes
 			int sendSocket = sendFindSuccessorRPC(cPN, targetID);
+
+			while(sendSocket == -1){
+				clearNode(successorList, r, fingerTable, succ, cPN);
+				cPN = closetPrecedingNode(targetID, fingerTable, successorList, r, self);
+				sendSocket = sendFindSuccessorRPC(cPN, targetID);
+			}
 
 			uint64_t tL;
 			read_n_bytes(&tL, 8, sendSocket);
@@ -479,7 +527,7 @@ int handleCheckPredecessorRPC(uint8_t **checkPredeRetSerial, size_t *checkPredeR
 	return 0;
 }
 
-void sendReturnRPC(uint8_t *retV, size_t retLen, int hasvalue, int clntSocket){
+int sendReturnRPC(uint8_t *retV, size_t retLen, int hasvalue, int clntSocket){
 	Protocol__Return ret = PROTOCOL__RETURN__INIT;	
 
 	ret.success = 1;
@@ -504,11 +552,20 @@ void sendReturnRPC(uint8_t *retV, size_t retLen, int hasvalue, int clntSocket){
 	tL = htobe64(tL);
 	memcpy(buffer, &tL, 8);
 	memcpy(buffer+8, retSerial, retSerialLen);
-	send_n_bytes(buffer, 8+retSerialLen, clntSocket);
+	
+	int success = send_n_bytes(buffer, 8+retSerialLen, clntSocket);
+	if(success == -1)
+		return -1;
+	return 1;
 }
 
 int sendGetSuccessorListRPC(struct Node *nodeToAsk){
 	int sendSocket = createSendSocket(nodeToAsk->ipAddr, nodeToAsk->port);
+
+
+	if(sendSocket == -1){
+		return -1;
+	}
 
 	Protocol__GetSuccessorListArgs getSucListArgs = PROTOCOL__GET_SUCCESSOR_LIST_ARGS__INIT;
 	size_t argsLen = protocol__get_successor_list_args__get_packed_size(&getSucListArgs);
@@ -532,7 +589,10 @@ int sendGetSuccessorListRPC(struct Node *nodeToAsk){
 	uint64_t lenInNB = htobe64(8+callSerialLen);
 	memcpy(buffer, &lenInNB, 8);
 	memcpy(buffer+8, callSerial, callSerialLen);
-	send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	int success = send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+
+	if(success ==-1)
+		return -1;
 
 	return sendSocket;
 }	
@@ -540,7 +600,8 @@ int sendGetSuccessorListRPC(struct Node *nodeToAsk){
 int sendGetPredecessorRPC(struct Node *nodeToAsk){
 	int sendSocket = createSendSocket(nodeToAsk->ipAddr, nodeToAsk->port);
 
-	if(sendSocket == -1){
+
+	if(sendSocket == -1){	
 		return sendSocket;
 	}
 
@@ -566,7 +627,10 @@ int sendGetPredecessorRPC(struct Node *nodeToAsk){
 	uint64_t lenInNB = htobe64(8+callSerialLen);
 	memcpy(buffer, &lenInNB, 8);
 	memcpy(buffer+8, callSerial, callSerialLen);
-	send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	int success = send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	
+	if(success == -1)
+		return -1;
 
 	return sendSocket;
 }
@@ -607,14 +671,17 @@ int sendNotifyRPC(struct Node *nodeToAsk, struct Node *from){
 	uint64_t lenInNB = htobe64(8+callSerialLen);
 	memcpy(buffer, &lenInNB, 8);
 	memcpy(buffer+8, callSerial, callSerialLen);
-	send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	int success = send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+
+	if(success ==-1)
+		return -1;
 
 	return sendSocket;
 }
 
 int sendCheckPredecessorRPC(struct Node *nodeToAsk){
 	int sendSocket = createSendSocket(nodeToAsk->ipAddr, nodeToAsk->port);
-
+	
 	if(sendSocket == -1){
 		return sendSocket;
 	}
@@ -642,12 +709,14 @@ int sendCheckPredecessorRPC(struct Node *nodeToAsk){
 	uint64_t lenInNB = htobe64(8+callSerialLen);
 	memcpy(buffer, &lenInNB, 8);
 	memcpy(buffer+8, callSerial, callSerialLen);
-	send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	int success = send_n_bytes(buffer, 8+callSerialLen, sendSocket);
+	if(success == -1)
+		return -1;
 
 	return sendSocket;
 }
 
-void stabilize(struct Node *successorList, int r, struct Node *self, struct Node *successor, struct Node *prede){
+void stabilize(struct Node *successorList, int r, struct Node *fingerTable, struct Node *self, struct Node *successor, struct Node *prede){
 	for(int i = 0; i < r; i++){
 		if(memcmp(self, &successorList[i], sizeof(struct Node)) == 0){
 			struct Node tN = {0};
@@ -665,91 +734,95 @@ void stabilize(struct Node *successorList, int r, struct Node *self, struct Node
 
 		int socket = sendGetPredecessorRPC(&successorList[i]);
 		
-		if(socket != -1){
-			uint64_t tL;
-			read_n_bytes(&tL, 8, socket);
-			tL = be64toh(tL) - 8;
-			uint8_t buffer[tL];
-			read_n_bytes(buffer, tL, socket);
-
-			Protocol__Return *ret = protocol__return__unpack(NULL, tL, buffer);
-			Protocol__GetPredecessorRet *getPredeRet = protocol__get_predecessor_ret__unpack(NULL, ret->value.len, ret->value.data);
-			//Free unpack later
-			close(socket);
-
-			socket = sendGetSuccessorListRPC(&successorList[i]);
-			
-			if(socket != -1){
-				uint64_t tL2;
-				read_n_bytes(&tL2, 8, socket);
-				tL2 = be64toh(tL2) - 8;
-				uint8_t buffer2[tL2];
-				read_n_bytes(buffer2, tL2, socket);
-				
-				Protocol__Return *ret2 = protocol__return__unpack(NULL, tL2, buffer2);
-				Protocol__GetSuccessorListRet *getSucListRet = protocol__get_successor_list_ret__unpack(NULL, ret2->value.len, ret2->value.data);
-				
-				successorList[0] = successorList[i];
-				*successor = successorList[i];
-				for(int j = 1; j < r; j++){
-					memcpy(successorList[j].ID, getSucListRet->successors[j-1]->id.data, 20);
-					strcpy(successorList[j].ipAddr, getSucListRet->successors[j-1]->address);
-					successorList[j].port = getSucListRet->successors[j-1]->port;
-				}
-				
-				protocol__get_successor_list_ret__free_unpacked(getSucListRet, NULL);
-				protocol__return__free_unpacked(ret2, NULL);
-				close(socket);
-				
-				//If the successor's predecessor is not null and falls into the 
-				if(ret->has_value && between(getPredeRet->node->id.data, self->ID, successorList[i].ID ) ){
-					struct Node successorsPrede = {0};
-					initializeNode(&successorsPrede, getPredeRet->node->address, getPredeRet->node->port, getPredeRet->node->id.data);
-					socket = sendGetSuccessorListRPC(&successorsPrede);
-
-					if(socket != -1){
-						uint64_t tL3;
-						read_n_bytes(&tL3, 8, socket);
-						tL3 = be64toh(tL3) - 8;
-						uint8_t buffer3[tL3];
-						read_n_bytes(buffer3, tL3, socket);
-
-						Protocol__Return *ret3 = protocol__return__unpack(NULL, tL3, buffer3);
-						Protocol__GetSuccessorListRet *getSucListRet3 = protocol__get_successor_list_ret__unpack(NULL, ret3->value.len, ret3->value.data);
-
-						successorList[0] = successorsPrede;
-						*successor = successorsPrede;
-						for(int t = 1; t < r; t++){
-							memcpy(successorList[t].ID, getSucListRet3->successors[t-1]->id.data, 20);
-							strcpy(successorList[t].ipAddr, getSucListRet3->successors[t-1]->address);
-							successorList[t].port = getSucListRet3->successors[t-1]->port;
-						}
-						
-						protocol__get_successor_list_ret__free_unpacked(getSucListRet3, NULL);
-						protocol__return__free_unpacked(ret3, NULL);
-						close(socket);
-					}
-				}
-				//Notify the successor 
-				*successor = successorList[0];
-				socket = sendNotifyRPC(successor, self);
-				uint64_t tL4;
-				read_n_bytes(&tL4, 8, socket);
-				tL4 = be64toh(tL4) - 8;
-				uint8_t buffer4[tL4];
-				read_n_bytes(buffer4, tL4, socket);
-				Protocol__Return *ret4 = protocol__return__unpack(NULL, tL4, buffer4);
-				Protocol__NotifyRet *notifyRet = protocol__notify_ret__unpack(NULL, ret4->value.len, ret4->value.data);
-
-				protocol__notify_ret__free_unpacked(notifyRet, NULL);
-				protocol__return__free_unpacked(ret4, NULL);
-				close(socket);
-
-				break;
-			}
-			protocol__get_predecessor_ret__free_unpacked(getPredeRet, NULL);
-			protocol__return__free_unpacked(ret, NULL);
+		while(socket == -1){
+			clearNode(successorList, r, fingerTable, successor, &successorList[i]);
+			i++;
+			socket = sendGetPredecessorRPC(&successorList[i]);
 		}
+		
+		uint64_t tL;
+		read_n_bytes(&tL, 8, socket);
+		tL = be64toh(tL) - 8;
+		uint8_t buffer[tL];
+		read_n_bytes(buffer, tL, socket);
+
+		Protocol__Return *ret = protocol__return__unpack(NULL, tL, buffer);
+		Protocol__GetPredecessorRet *getPredeRet = protocol__get_predecessor_ret__unpack(NULL, ret->value.len, ret->value.data);
+		//Free unpack later
+		close(socket);
+
+		socket = sendGetSuccessorListRPC(&successorList[i]);
+		
+		uint64_t tL2;
+		read_n_bytes(&tL2, 8, socket);
+		tL2 = be64toh(tL2) - 8;
+		uint8_t buffer2[tL2];
+		read_n_bytes(buffer2, tL2, socket);
+		
+		Protocol__Return *ret2 = protocol__return__unpack(NULL, tL2, buffer2);
+		Protocol__GetSuccessorListRet *getSucListRet = protocol__get_successor_list_ret__unpack(NULL, ret2->value.len, ret2->value.data);
+		
+		successorList[0] = successorList[i];
+		*successor = successorList[i];
+		for(int j = 1; j < r; j++){
+			memcpy(successorList[j].ID, getSucListRet->successors[j-1]->id.data, 20);
+			strcpy(successorList[j].ipAddr, getSucListRet->successors[j-1]->address);
+			successorList[j].port = getSucListRet->successors[j-1]->port;
+		}
+		
+		protocol__get_successor_list_ret__free_unpacked(getSucListRet, NULL);
+		protocol__return__free_unpacked(ret2, NULL);
+		close(socket);
+		
+		//If the successor's predecessor is not null and falls into the 
+		if(ret->has_value && between(getPredeRet->node->id.data, self->ID, successorList[i].ID ) ){
+			struct Node successorsPrede = {0};
+			initializeNode(&successorsPrede, getPredeRet->node->address, getPredeRet->node->port, getPredeRet->node->id.data);
+			socket = sendGetSuccessorListRPC(&successorsPrede);
+
+			if(socket != -1){
+				uint64_t tL3;
+				read_n_bytes(&tL3, 8, socket);
+				tL3 = be64toh(tL3) - 8;
+				uint8_t buffer3[tL3];
+				read_n_bytes(buffer3, tL3, socket);
+
+				Protocol__Return *ret3 = protocol__return__unpack(NULL, tL3, buffer3);
+				Protocol__GetSuccessorListRet *getSucListRet3 = protocol__get_successor_list_ret__unpack(NULL, ret3->value.len, ret3->value.data);
+
+				successorList[0] = successorsPrede;
+				*successor = successorsPrede;
+				for(int t = 1; t < r; t++){
+					memcpy(successorList[t].ID, getSucListRet3->successors[t-1]->id.data, 20);
+					strcpy(successorList[t].ipAddr, getSucListRet3->successors[t-1]->address);
+					successorList[t].port = getSucListRet3->successors[t-1]->port;
+				}
+				
+				protocol__get_successor_list_ret__free_unpacked(getSucListRet3, NULL);
+				protocol__return__free_unpacked(ret3, NULL);
+				close(socket);
+			}
+		}
+
+		//Notify the successor 
+		*successor = successorList[0];
+		socket = sendNotifyRPC(successor, self);
+		uint64_t tL4;
+		read_n_bytes(&tL4, 8, socket);
+		tL4 = be64toh(tL4) - 8;
+		uint8_t buffer4[tL4];
+		read_n_bytes(buffer4, tL4, socket);
+		Protocol__Return *ret4 = protocol__return__unpack(NULL, tL4, buffer4);
+		Protocol__NotifyRet *notifyRet = protocol__notify_ret__unpack(NULL, ret4->value.len, ret4->value.data);
+
+		protocol__notify_ret__free_unpacked(notifyRet, NULL);
+		protocol__return__free_unpacked(ret4, NULL);
+		close(socket);
+
+		break;
+
+		protocol__get_predecessor_ret__free_unpacked(getPredeRet, NULL);
+		protocol__return__free_unpacked(ret, NULL);
 	}
 	//All nodes lower than i have dead,
 }
@@ -799,7 +872,7 @@ void addHashToPowerOfTwo (uint8_t *input,  uint8_t *res, int power) {
 	}
 }
 
-void fixFingers(struct Node *fingerTable, struct Node *successorList, struct Node *self, int *next){
+void fixFingers(struct Node *fingerTable, struct Node *successor, struct Node *successorList, int r, struct Node *self, int *next){
 	*next = *next +1;
 
 	if(*next > 160)
@@ -821,7 +894,7 @@ void fixFingers(struct Node *fingerTable, struct Node *successorList, struct Nod
 
 	
 	int success = handleFindSuccessorRPC(&findSuccessorRetSerial, &findSuccessorRetSerialLen, argsSerial, 
-						argsLen, self, successorList, fingerTable);
+						argsLen, self, successor, successorList, r, fingerTable);
 	
 	if(!success){
 		fprintf(stderr, "fix fingers failed\n");
@@ -1016,7 +1089,7 @@ int main(int argc, char *argv[]){
 					uint8_t *findSuccessorRetSerial = NULL;
 					size_t findSuccessorRetSerialLen;
 					int success = handleFindSuccessorRPC(&findSuccessorRetSerial, &findSuccessorRetSerialLen, argsSerial, 
-										argsLen, &self, successorList, fingerTable);
+										argsLen, &self, &successor, successorList, args.r, fingerTable);
 
 					if(!success){
 						fprintf(stderr, "handleFindSuccessorRPC failed\n");
@@ -1075,46 +1148,70 @@ int main(int argc, char *argv[]){
 						uint8_t *findSuccessorRetSerial = NULL;
 						size_t findSuccessorRetSerialLen;
 						int hasvalue = handleFindSuccessorRPC(&findSuccessorRetSerial, &findSuccessorRetSerialLen, call->args.data, 
-										call->args.len, &self, successorList, fingerTable);
+										call->args.len, &self, &successor, successorList, args.r, fingerTable);
 						
-						sendReturnRPC(findSuccessorRetSerial, findSuccessorRetSerialLen, hasvalue, clntSock);
-						free(findSuccessorRetSerial);
+						int success = sendReturnRPC(findSuccessorRetSerial, findSuccessorRetSerialLen, hasvalue, clntSock);
+						if(success == -1){
+							struct Node temp = {0};
+							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
+							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+						}
 						close(clntSock);
+						free(findSuccessorRetSerial);
 					} else if(strcmp(call->name, "get_successor_list") == 0) {
 						uint8_t *getSuccessorListRetSerial = NULL;
 						size_t getSuccessorListRetSerialLen;
 
 						int hasvalue = handleGetSuccessorListRPC(&getSuccessorListRetSerial, &getSuccessorListRetSerialLen, call->args.data, 
-										call->args.len, successorList, args.r);
-						sendReturnRPC(getSuccessorListRetSerial, getSuccessorListRetSerialLen, hasvalue, clntSock);
-						
-						free(getSuccessorListRetSerial);
+										call->args.len,successorList, args.r);
+						int success = sendReturnRPC(getSuccessorListRetSerial, getSuccessorListRetSerialLen, hasvalue, clntSock);
+						if(success == -1){
+							struct Node temp = {0};
+							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
+							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+						}
 						close(clntSock);
+						free(getSuccessorListRetSerial);
 					} else if(strcmp(call->name, "get_predecessor") == 0){
 						uint8_t *getPredecessorRetSerial = NULL;
 						size_t getPredecessorRetSerialLen;
 
 						int hasvalue = handleGetPredecessorRPC(&getPredecessorRetSerial, &getPredecessorRetSerialLen, call->args.data,
 										call->args.len, &prede);
-						sendReturnRPC(getPredecessorRetSerial, getPredecessorRetSerialLen, hasvalue, clntSock);
-						free(getPredecessorRetSerial);
+						int success = sendReturnRPC(getPredecessorRetSerial, getPredecessorRetSerialLen, hasvalue, clntSock);
+						if(success == -1){
+							struct Node temp = {0};
+							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
+							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+						}
 						close(clntSock);
+						free(getPredecessorRetSerial);
 					} else if(strcmp(call->name, "notify") == 0){
 						uint8_t *notifyRetSerial = NULL;
 						size_t notifyRetSerialLen;
 
 						int hasvalue = handleNotifyRPC(&notifyRetSerial, &notifyRetSerialLen, call->args.data,
 										call->args.len, &prede, &self);
-						sendReturnRPC(notifyRetSerial,notifyRetSerialLen, hasvalue, clntSock);
-						free(notifyRetSerial);
+						int success = sendReturnRPC(notifyRetSerial,notifyRetSerialLen, hasvalue, clntSock);
+						if(success == -1){
+							struct Node temp = {0};
+							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
+							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+						}
 						close(clntSock);
+						free(notifyRetSerial);
 					} else if(strcmp(call->name, "check_predecessor") == 0){
 						uint8_t *checkPredeRetSerial = NULL;
 						size_t checkPredeRetSerialLen;
 
 						int hasvalue = handleCheckPredecessorRPC(&checkPredeRetSerial, &checkPredeRetSerialLen, call->args.data,
 										call->args.len);
-						sendReturnRPC(checkPredeRetSerial,checkPredeRetSerialLen, hasvalue, clntSock);
+						int success = sendReturnRPC(checkPredeRetSerial,checkPredeRetSerialLen, hasvalue, clntSock);
+						if(success == -1){
+							struct Node temp = {0};
+							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
+							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+						}
 						free(checkPredeRetSerial);
 						close(clntSock);
 					} 
@@ -1127,12 +1224,11 @@ int main(int argc, char *argv[]){
 		gettimeofday(&timeNow, NULL);
 
 		if(timedifferenceMsec(tsPrev, timeNow) > args.timeStabilize){
-			stabilize(successorList, args.r, &self, &successor, &prede);
+			stabilize(successorList, args.r, fingerTable,  &self, &successor, &prede);
 			gettimeofday(&tsPrev, NULL);
 		}
 		else if(timedifferenceMsec(tffPrev, timeNow) > args.timeFixFingers){
-			fixFingers(fingerTable, successorList, &self, &next);
-		
+			fixFingers(fingerTable, &successor, successorList, args.r, &self, &next);
 			gettimeofday(&tffPrev, NULL);
 		}else if(timedifferenceMsec(tcpPrev, timeNow) > args.timeCheckPrede){
 			
