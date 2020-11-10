@@ -42,8 +42,8 @@ void alarmHandler(){
 }
 
 struct chord_arguments {
-	char myAddr[16], joinAddr[16];
-	int myPort, joinPort, timeStabilize, timeFixFingers, timeCheckPrede, r, id;
+	char myAddr[16], joinAddr[16], id[41];
+	int myPort, joinPort, timeStabilize, timeFixFingers, timeCheckPrede, r;
 };
 
 struct Node{
@@ -81,7 +81,7 @@ error_t chord_parser(int key, char *arg, struct argp_state *state) {
 		args->r = atoi(arg);
 		break;
 	case 'i':
-		args->id = atoi(arg);
+		strcpy(args->id, arg);
 		break;
 	default:
 		ret = ARGP_ERR_UNKNOWN;
@@ -156,16 +156,21 @@ void printHash(uint8_t *hash){
 	}
 }
 
-void initializeNode(struct Node *node, char *ipaddr, int port){
+void initializeNode(struct Node *node, char *ipaddr, int port, uint8_t *ID){
 	strcpy(node->ipAddr, ipaddr);
 	node->port = port;
-	char tempString[25] = {0};
-	strcat(tempString, ipaddr);
-	strcat(tempString, ":");
-	char tempPort[10] = {0};
-	sprintf(tempPort, "%d", port);
-	strcat(tempString, tempPort);
-	sha1Hash(tempString, node->ID);
+
+	if(ID == NULL){
+		char tempString[25] = {0};
+		strcat(tempString, ipaddr);
+		strcat(tempString, ":");
+		char tempPort[10] = {0};
+		sprintf(tempPort, "%d", port);
+		strcat(tempString, tempPort);
+		sha1Hash(tempString, node->ID);
+	}else{
+		memcpy(node->ID, ID, 20);
+	}
 }
 
 void createRing(struct Node *myNode, int r, struct Node *susList, struct Node *fingTable){
@@ -699,7 +704,7 @@ void stabilize(struct Node *successorList, int r, struct Node *self, struct Node
 				//If the successor's predecessor is not null and falls into the 
 				if(ret->has_value && between(getPredeRet->node->id.data, self->ID, successorList[i].ID ) ){
 					struct Node successorsPrede = {0};
-					initializeNode(&successorsPrede, getPredeRet->node->address, getPredeRet->node->port);
+					initializeNode(&successorsPrede, getPredeRet->node->address, getPredeRet->node->port, getPredeRet->node->id.data);
 					socket = sendGetSuccessorListRPC(&successorsPrede);
 
 					if(socket != -1){
@@ -750,6 +755,11 @@ void stabilize(struct Node *successorList, int r, struct Node *self, struct Node
 }
 
 void checkPredecessor(struct Node *prede){
+	struct Node empty = {0};
+
+	if(memcmp(&empty, prede, sizeof(struct Node)) == 0){
+		return;
+	}
 	int sendSocket = sendCheckPredecessorRPC(prede);
 
 	if(sendSocket == -1){
@@ -894,9 +904,20 @@ int main(int argc, char *argv[]){
 	readSockets[1].fd = servSock;
 	readSockets[1].events = POLLIN;
 
-	//Same setup for both create and join
+	if(strlen(args.id) != 0){
+		uint8_t nodeID[20] = {0};
+		for(int i = 0; i< 40; i+=2){
+			char temp[3] = {0};
+			memcpy(temp, args.id+i, 2);
+			nodeID[i/2] = (int)strtol(temp, NULL, 16);
+		}
+		initializeNode(&self, args.myAddr, args.myPort, nodeID);
+	}else{
+		initializeNode(&self, args.myAddr, args.myPort, NULL);
+	}
+	
 	memset(&prede, 0, sizeof(struct Node));
-	initializeNode(&self, args.myAddr, args.myPort);
+	
 
 	char joinPortStr[10] = {0};
 	sprintf(joinPortStr, "%d", args.joinPort);
@@ -907,7 +928,9 @@ int main(int argc, char *argv[]){
     }else if(strcmp("", args.joinAddr) && strcmp("0", joinPortStr)){
 		//Join existing node
 		struct Node nodeJoin = {0};
-		initializeNode(&nodeJoin, args.joinAddr, args.joinPort);
+
+		//Initialize the node to join with a NULL shoould be fine
+		initializeNode(&nodeJoin, args.joinAddr, args.joinPort, NULL);
 		memset(fingerTable, 0, sizeof(struct Node)*161);
 		int sendSocket = sendFindSuccessorRPC(&nodeJoin, self.ID);
 		uint64_t tL;
@@ -929,7 +952,7 @@ int main(int argc, char *argv[]){
 		close(sendSocket);
 
 		//So far, get successor has ended
-		sendSocket = sendGetSuccessorListRPC(&nodeJoin);
+		sendSocket = sendGetSuccessorListRPC(&successor);
 		uint64_t tL2;
 		read_n_bytes(&tL2, 8, sendSocket);
 		tL2 = be64toh(tL2) - 8;
@@ -1105,13 +1128,14 @@ int main(int argc, char *argv[]){
 
 		if(timedifferenceMsec(tsPrev, timeNow) > args.timeStabilize){
 			stabilize(successorList, args.r, &self, &successor, &prede);
-			
 			gettimeofday(&tsPrev, NULL);
 		}
 		else if(timedifferenceMsec(tffPrev, timeNow) > args.timeFixFingers){
 			fixFingers(fingerTable, successorList, &self, &next);
+		
 			gettimeofday(&tffPrev, NULL);
 		}else if(timedifferenceMsec(tcpPrev, timeNow) > args.timeCheckPrede){
+			
 			checkPredecessor(&prede);
 			gettimeofday(&tcpPrev, NULL);
 		}
