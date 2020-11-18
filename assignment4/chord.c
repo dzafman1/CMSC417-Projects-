@@ -16,7 +16,16 @@
 #include "hash.h"
 #include "chord.pb-c.h"
 
-int ts = 0, tff = 0, tcp = 0, TS, TFF, TCP;
+struct Node{
+	uint8_t ID[20];
+	char ipAddr[16];
+	int port;
+};
+
+int ts = 0, tff = 0, tcp = 0, TS, TFF, TCP, r;
+struct Node self = {0}, prede = {0};
+struct Node *successorList;
+struct Node fingerTable[161] = {0};
 
 void alarmHandler(){
 	if(ts > 0){
@@ -46,11 +55,7 @@ struct chord_arguments {
 	int myPort, joinPort, timeStabilize, timeFixFingers, timeCheckPrede, r;
 };
 
-struct Node{
-	uint8_t ID[20];
-	char ipAddr[16];
-	int port;
-};
+
 
 error_t chord_parser(int key, char *arg, struct argp_state *state) {
 	struct chord_arguments *args = state->input;
@@ -201,8 +206,8 @@ int createSendSocket(char *ipAddr, int port){
 
 	struct timeval timeout;
 	timeout.tv_sec  = 0;  
-	timeout.tv_usec = 5000 * 1000; //timeout in 0.5 seconds
-	setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	timeout.tv_usec = 100 * 1000; //timeout in 0.1 seconds
+	//setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 	setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
     if (connect(clientSock, (struct sockaddr *) &servAddr, sizeof(servAddr)) < 0){
@@ -931,6 +936,17 @@ float timedifferenceMsec(struct timeval t0, struct timeval t1)
     return (t1.tv_sec - t0.tv_sec) * 1000.0f + (t1.tv_usec - t0.tv_usec) / 1000.0f;
 }
 
+void handle_clients(int *fds, nfds_t nfds){
+	struct pollfd *pfds = calloc(sizeof(pfds), nfds);
+
+	for(nfds i =0; i< nfds;++i){
+		pfds[i].events = POLLIN;
+		pfds[i].fd = fds[i];
+	}
+
+	
+}
+
 int main(int argc, char *argv[]){
     struct argp_option options[] = {
 		{ "addr", 'a', "myAddr", 0, "The IP address that the Chord client will bind to, as well as advertise to other nodes.", 0},
@@ -954,13 +970,8 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Got error in parse\n");
 	}
 
-	struct Node self = {0};
-	struct Node successor;
-	struct Node prede = {0};
-	struct Node successorList[args.r];
-	struct Node fingerTable[161];
-	memset(successorList, 0, args.r * sizeof(struct Node));
-	memset(successorList, 0, 161 * sizeof(struct Node));
+	r = args.r;
+	successorList = calloc(1, r*sizeof(struct Node));
 
 	TCP = args.timeCheckPrede / 1000;
 	TFF = args.timeFixFingers / 1000;
@@ -988,15 +999,12 @@ int main(int argc, char *argv[]){
 	}else{
 		initializeNode(&self, args.myAddr, args.myPort, NULL);
 	}
-	
-	memset(&prede, 0, sizeof(struct Node));
-	
 
 	char joinPortStr[10] = {0};
 	sprintf(joinPortStr, "%d", args.joinPort);
 	if(!strcmp("", args.joinAddr) && !strcmp("0", joinPortStr)){
         //Create ring
-		successor = self;
+		successorList[0] = self;
 		createRing(&self, args.r, successorList, fingerTable);
     }else if(strcmp("", args.joinAddr) && strcmp("0", joinPortStr)){
 		//Join existing node
@@ -1015,17 +1023,17 @@ int main(int argc, char *argv[]){
 		Protocol__Return *ret = protocol__return__unpack(NULL, tL, buffer);
 		Protocol__FindSuccessorRet *findSucRet = protocol__find_successor_ret__unpack(NULL, ret->value.len, ret->value.data);
 
-		strcpy(successor.ipAddr, findSucRet->node->address);
-		memcpy(successor.ID, findSucRet->node->id.data, 20);
-		successor.port = findSucRet->node->port;
-		successorList[0] = successor;
+		strcpy(successorList[0].ipAddr, findSucRet->node->address);
+		memcpy(successorList[0].ID, findSucRet->node->id.data, 20);
+		successorList[0].port = findSucRet->node->port;
+		
 		
 		protocol__find_successor_ret__free_unpacked(findSucRet, NULL);
 		protocol__return__free_unpacked(ret, NULL);
 		close(sendSocket);
 
 		//So far, get successor has ended
-		sendSocket = sendGetSuccessorListRPC(&successor);
+		sendSocket = sendGetSuccessorListRPC(successorList);
 		uint64_t tL2;
 		read_n_bytes(&tL2, 8, sendSocket);
 		tL2 = be64toh(tL2) - 8;
@@ -1048,9 +1056,6 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "ja & jp must be both specified or unspecfied\n");
         abort();
 	}
-	
-	// signal(SIGALRM, alarmHandler);
-	// alarm(1);
 
 	printf("> ");
 	fflush(stdout);
@@ -1089,7 +1094,7 @@ int main(int argc, char *argv[]){
 					uint8_t *findSuccessorRetSerial = NULL;
 					size_t findSuccessorRetSerialLen;
 					int success = handleFindSuccessorRPC(&findSuccessorRetSerial, &findSuccessorRetSerialLen, argsSerial, 
-										argsLen, &self, &successor, successorList, args.r, fingerTable);
+										argsLen, &self, successorList, args.r, fingerTable);
 
 					if(!success){
 						fprintf(stderr, "handleFindSuccessorRPC failed\n");
@@ -1148,13 +1153,13 @@ int main(int argc, char *argv[]){
 						uint8_t *findSuccessorRetSerial = NULL;
 						size_t findSuccessorRetSerialLen;
 						int hasvalue = handleFindSuccessorRPC(&findSuccessorRetSerial, &findSuccessorRetSerialLen, call->args.data, 
-										call->args.len, &self, &successor, successorList, args.r, fingerTable);
+										call->args.len, &self,  successorList, args.r, fingerTable);
 						
 						int success = sendReturnRPC(findSuccessorRetSerial, findSuccessorRetSerialLen, hasvalue, clntSock);
 						if(success == -1){
 							struct Node temp = {0};
 							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
-							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+							clearNode(successorList, args.r, fingerTable, &temp);
 						}
 						close(clntSock);
 						free(findSuccessorRetSerial);
@@ -1168,7 +1173,7 @@ int main(int argc, char *argv[]){
 						if(success == -1){
 							struct Node temp = {0};
 							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
-							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+							clearNode(successorList, args.r, fingerTable,  &temp);
 						}
 						close(clntSock);
 						free(getSuccessorListRetSerial);
@@ -1182,7 +1187,7 @@ int main(int argc, char *argv[]){
 						if(success == -1){
 							struct Node temp = {0};
 							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
-							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+							clearNode(successorList, args.r, fingerTable,  &temp);
 						}
 						close(clntSock);
 						free(getPredecessorRetSerial);
@@ -1196,7 +1201,7 @@ int main(int argc, char *argv[]){
 						if(success == -1){
 							struct Node temp = {0};
 							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
-							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+							clearNode(successorList, args.r, fingerTable,  &temp);
 						}
 						close(clntSock);
 						free(notifyRetSerial);
@@ -1210,7 +1215,7 @@ int main(int argc, char *argv[]){
 						if(success == -1){
 							struct Node temp = {0};
 							initializeNode(&temp, clntName, ntohs(clntAddr.sin_port), NULL);
-							clearNode(successorList, args.r, fingerTable, &successor, &temp);
+							clearNode(successorList, args.r, fingerTable,  &temp);
 						}
 						free(checkPredeRetSerial);
 						close(clntSock);
@@ -1224,11 +1229,11 @@ int main(int argc, char *argv[]){
 		gettimeofday(&timeNow, NULL);
 
 		if(timedifferenceMsec(tsPrev, timeNow) > args.timeStabilize){
-			stabilize(successorList, args.r, fingerTable,  &self, &successor, &prede);
+			stabilize(successorList, args.r, fingerTable,  &self,  &prede);
 			gettimeofday(&tsPrev, NULL);
 		}
 		else if(timedifferenceMsec(tffPrev, timeNow) > args.timeFixFingers){
-			fixFingers(fingerTable, &successor, successorList, args.r, &self, &next);
+			fixFingers(fingerTable, successorList, args.r, &self, &next);
 			gettimeofday(&tffPrev, NULL);
 		}else if(timedifferenceMsec(tcpPrev, timeNow) > args.timeCheckPrede){
 			
