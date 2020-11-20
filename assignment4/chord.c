@@ -16,31 +16,6 @@
 #include "hash.h"
 #include "chord.pb-c.h"
 
-int ts = 0, tff = 0, tcp = 0, TS, TFF, TCP;
-
-void alarmHandler(){
-	if(ts > 0){
-		ts --;
-	}else{
-		ts = TS;
-	}
-
-	if(tff > 0){
-		tff --;
-	}else{
-		tff = TFF;
-	}
-
-	if(tcp > 0){
-		tcp --;
-	}else{
-		tcp = TCP;
-	}
-
-	signal(SIGALRM, alarmHandler);
-	alarm(1);
-}
-
 struct chord_arguments {
 	char myAddr[16], joinAddr[16], id[41];
 	int myPort, joinPort, timeStabilize, timeFixFingers, timeCheckPrede, r;
@@ -70,12 +45,15 @@ error_t chord_parser(int key, char *arg, struct argp_state *state) {
 		break;
 	case 300:
 		args->timeStabilize = atoi(arg);
+		args->timeStabilize = args->timeStabilize >= 1000 ? args->timeStabilize : 1000;
 		break;
 	case 400:
 		args->timeFixFingers = atoi(arg);
+		args->timeFixFingers = args->timeFixFingers >= 1000 ? args->timeFixFingers : 1000;
 		break;
 	case 500:
 		args->timeCheckPrede = atoi(arg);
+		args->timeCheckPrede = args->timeCheckPrede >= 1000 ? args->timeCheckPrede : 1000;
 		break;
 	case 'r':
 		args->r = atoi(arg);
@@ -962,10 +940,6 @@ int main(int argc, char *argv[]){
 	memset(successorList, 0, args.r * sizeof(struct Node));
 	memset(successorList, 0, 161 * sizeof(struct Node));
 
-	TCP = args.timeCheckPrede / 1000;
-	TFF = args.timeFixFingers / 1000;
-	TS = args.timeStabilize / 1000;
-	
 	//KeyBoard Poll
 	struct pollfd readSockets[2] = {0};
     readSockets[0].fd = STDIN_FILENO;
@@ -991,7 +965,6 @@ int main(int argc, char *argv[]){
 	
 	memset(&prede, 0, sizeof(struct Node));
 	
-
 	char joinPortStr[10] = {0};
 	sprintf(joinPortStr, "%d", args.joinPort);
 	if(!strcmp("", args.joinAddr) && !strcmp("0", joinPortStr)){
@@ -1142,8 +1115,7 @@ int main(int argc, char *argv[]){
 						fprintf(stderr, "Call Unpack failed\n");
 						abort();
 					}
-					//printf("Handling request: %s\n", call->name);
-					//Handing different types of nodes' queries
+				
 					if (strcmp(call->name, "find_successor") == 0) {
 						uint8_t *findSuccessorRetSerial = NULL;
 						size_t findSuccessorRetSerialLen;
