@@ -34,8 +34,9 @@ int main(int argc, char *argv[]) {
 
 	printf("These should match the examples in the assignment spec:\n");
 
-	printHash("Hello",  ctx);
-	printHash("World",  ctx);
+	printHash("127.0.0.1:34000",  ctx);
+	printHash("127.0.0.1:34001",  ctx);
+	printHash("127.0.0.1:34002",  ctx);
 	//printHash("2003", ctx);
 
 	sha1sum_destroy(ctx);
