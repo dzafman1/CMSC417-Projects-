@@ -1021,9 +1021,6 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "ja & jp must be both specified or unspecfied\n");
         abort();
 	}
-	
-	// signal(SIGALRM, alarmHandler);
-	// alarm(1);
 
 	printf("> ");
 	fflush(stdout);
@@ -1203,7 +1200,6 @@ int main(int argc, char *argv[]){
 			fixFingers(fingerTable, &successor, successorList, args.r, &self, &next);
 			gettimeofday(&tffPrev, NULL);
 		}else if(timedifferenceMsec(tcpPrev, timeNow) > args.timeCheckPrede){
-			
 			checkPredecessor(&prede);
 			gettimeofday(&tcpPrev, NULL);
 		}
